@@ -55,13 +55,13 @@ export default function RelatoriosScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
-        {/* TÍTULO */}
+        {/* CABEÇALHO */}
         <View style={styles.headerSection}>
           <Text style={styles.headerTitle}>Relatórios</Text>
           <Text style={styles.headerSubtitle}>Análise inteligente dos seus ambientes</Text>
         </View>
 
-        {/* SELECTORS ROW */}
+        {/* SELETORES (AGORA COM SOMBRA) */}
         <View style={styles.selectorsRow}>
           <TouchableOpacity style={styles.dropdown}>
             <Text style={styles.dropdownText}>Todos os ambientes</Text>
@@ -73,7 +73,7 @@ export default function RelatoriosScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ÍNDICE DE CONFORTO */}
+        {/* CARD: ÍNDICE DE CONFORTO */}
         <View style={styles.cardMain}>
           <Text style={styles.cardTitle}>Índice de Conforto</Text>
           <View style={styles.gaugeContainer}>
@@ -85,38 +85,52 @@ export default function RelatoriosScreen() {
           <Text style={styles.statusDetail}>Baseado em temperatura, umidade, CO₂ e qualidade do ar</Text>
         </View>
 
-        {/* RESUMO DO PERÍODO */}
-        <Text style={styles.sectionTitle}>Resumo do Período</Text>
-        <View style={styles.metricsGrid}>
-          <SummaryCard label="24.5°C" sub="Min: 22.8° | Max: 27.1°" icon={<Thermometer color="#EF4444" size={20}/>} bgColor="#FFF1F2" />
-          <SummaryCard label="43%" sub="Min: 32% | Max: 55%" icon={<Droplets color="#3B82F6" size={20}/>} bgColor="#EFF6FF" />
-          <SummaryCard label="Bom" sub="Qualidade do Ar" icon={<Wind color="#8B5CF6" size={20}/>} bgColor="#F5F3FF" />
-          <SummaryCard label="Estável" sub="Tendência" icon={<TrendingUp color="#10B981" size={20}/>} bgColor="#ECFDF5" />
+        {/* CARD UNIFICADO: RESUMO DO PERÍODO */}
+        <View style={styles.cardMain}>
+          <Text style={styles.cardTitle}>Resumo do Período</Text>
+          <View style={styles.metricsGrid}>
+            <SummaryCard label="24.5°C" sub="Min: 22.8° | Max: 27.1°" icon={<Thermometer color="#EF4444" size={20}/>} bgColor="#FFF1F2" />
+            <SummaryCard label="43%" sub="Min: 32% | Max: 55%" icon={<Droplets color="#3B82F6" size={20}/>} bgColor="#EFF6FF" />
+            <SummaryCard label="Bom" sub="Qualidade do Ar" icon={<Wind color="#8B5CF6" size={20}/>} bgColor="#F5F3FF" />
+            <SummaryCard label="Estável" sub="Tendência" icon={<TrendingUp color="#10B981" size={20}/>} bgColor="#ECFDF5" />
+          </View>
         </View>
 
-        {/* GRÁFICO HISTÓRICO */}
+        {/* CARD: GRÁFICO HISTÓRICO */}
         <View style={styles.cardMain}>
           <Text style={styles.cardTitle}>Histórico de Temperatura e Umidade</Text>
           <LineChart
             data={{
               labels: ["06:00", "06:00", "07:00", "05:00"],
               datasets: [
-                { data: [55, 35, 48, 38], color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})` }, // Umidade
-                { data: [25, 28, 24, 26], color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})` }  // Temp
+                { data: [55, 35, 48, 38], color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`, strokeWidth: 3 },
+                { data: [25, 28, 24, 26], color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`, strokeWidth: 3 }
               ]
             }}
             width={width - 80}
-            height={180}
+            height={200}
             chartConfig={chartConfig}
             bezier
-            style={styles.chart}
+            style={styles.chartStyle}
           />
+          <View style={styles.legendRow}>
+            <View style={styles.legendItem}><View style={[styles.dot, {backgroundColor: '#EF4444'}]} /><Text style={styles.legendText}>Temperatura</Text></View>
+            <View style={styles.legendItem}><View style={[styles.dot, {backgroundColor: '#3B82F6'}]} /><Text style={styles.legendText}>Umidade</Text></View>
+          </View>
+        </View>
+
+        {/* CARD: ALERTAS */}
+        <View style={styles.cardMain}>
+            <Text style={styles.cardTitle}>Alertas por Tipo</Text>
+            <View style={styles.emptyAlerts}>
+                <Text style={styles.emptyText}>Nenhum alerta</Text>
+            </View>
         </View>
 
         <View style={{height: 100}} /> 
       </ScrollView>
 
-      {/* --- MODAL PERFIL --- */}
+      {/* --- MODAL DE PERFIL --- */}
       <Modal animationType="fade" transparent visible={isProfileVisible} onRequestClose={() => setIsProfileVisible(false)}>
         <View style={styles.modalOverlay}>
           <Pressable style={styles.modalBackdrop} onPress={() => setIsProfileVisible(false)} />
@@ -180,9 +194,11 @@ function TabItem({ icon, active, onPress }: any) {
 const chartConfig = {
   backgroundGradientFrom: "#FFF",
   backgroundGradientTo: "#FFF",
-  color: (opacity = 1) => `rgba(148, 163, 184, ${opacity})`,
-  strokeWidth: 2,
   decimalPlaces: 0,
+  color: (opacity = 1) => `rgba(148, 163, 184, ${opacity})`,
+  labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+  propsForDots: { r: "4", strokeWidth: "2", stroke: "#FFF" },
+  fillShadowGradientOpacity: 0,
 };
 
 const styles = StyleSheet.create({
@@ -199,46 +215,87 @@ const styles = StyleSheet.create({
   headerSubtitle: { fontSize: 14, color: '#64748B' },
   
   selectorsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  dropdown: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFF', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' },
-  dropdownText: { fontSize: 13, color: '#1E293B' },
+  
+  // FILTROS COM SOMBRA (ATUALIZADO)
+  dropdown: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    backgroundColor: '#FFF', 
+    padding: 12, 
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    // Sombras
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  dropdownText: { fontSize: 13, color: '#1E293B', fontWeight: '500' },
 
-  cardMain: { backgroundColor: '#FFF', borderRadius: 24, padding: 20, marginBottom: 20, alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9' },
+  cardMain: { 
+    backgroundColor: '#FFF', 
+    borderRadius: 24, 
+    padding: 20, 
+    marginBottom: 20, 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5, 
+  },
   cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#1E293B', alignSelf: 'flex-start', marginBottom: 20 },
   gaugeContainer: { width: 120, height: 120, justifyContent: 'center', alignItems: 'center' },
-  circleProgress: { width: 100, height: 100, borderRadius: 50, borderWidth: 8, borderColor: '#10B981', justifyContent: 'center', alignItems: 'center' },
-  gaugeValue: { fontSize: 28, fontWeight: 'bold', color: '#1E293B' },
-  statusMain: { fontSize: 18, fontWeight: 'bold', color: '#10B981', marginTop: 10 },
-  statusDetail: { fontSize: 11, color: '#94A3B8', textAlign: 'center', marginTop: 5 },
+  circleProgress: { width: 100, height: 100, borderRadius: 50, borderWidth: 10, borderColor: '#10B981', justifyContent: 'center', alignItems: 'center' },
+  gaugeValue: { fontSize: 32, fontWeight: 'bold', color: '#1E293B' },
+  statusMain: { fontSize: 20, fontWeight: 'bold', color: '#10B981', marginTop: 10 },
+  statusDetail: { fontSize: 12, color: '#94A3B8', textAlign: 'center', marginTop: 5, lineHeight: 18 },
 
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
-  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
-  summaryCard: { width: (width - 50) / 2, padding: 15, borderRadius: 16, gap: 5 },
-  summaryLabel: { fontSize: 18, fontWeight: 'bold', color: '#1E293B' },
-  summarySub: { fontSize: 10, color: '#64748B' },
+  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, width: '100%' },
+  summaryCard: { 
+    width: '48%', 
+    padding: 18, 
+    borderRadius: 20, 
+    gap: 8,
+  },
+  summaryLabel: { fontSize: 20, fontWeight: 'bold', color: '#1E293B' },
+  summarySub: { fontSize: 11, color: '#64748B', fontWeight: '500' },
 
-  chart: { marginVertical: 8, borderRadius: 16 },
+  chartStyle: { marginVertical: 10, borderRadius: 16, marginLeft: -10 },
+  legendRow: { flexDirection: 'row', gap: 20, marginTop: 10 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: 12, color: '#64748B', fontWeight: '500' },
 
-  bottomTab: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 75, backgroundColor: '#FFF', flexDirection: 'row', borderTopWidth: 1, borderColor: '#E2E8F0', paddingBottom: 15 },
+  emptyAlerts: { height: 150, justifyContent: 'center', alignItems: 'center' },
+  emptyText: { color: '#94A3B8', fontSize: 14 },
+
+  bottomTab: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, backgroundColor: '#FFF', flexDirection: 'row', borderTopWidth: 1, borderColor: '#E2E8F0', paddingBottom: 20 },
   tabItem: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  activeIndicator: { position: 'absolute', bottom: 10, width: 4, height: 4, borderRadius: 2, backgroundColor: '#2563EB' },
+  activeIndicator: { position: 'absolute', bottom: 12, width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#2563EB' },
   
-  // MODAL STYLES (MANTIDOS)
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row' },
-  modalBackdrop: { flex: 0.15 },
-  profileSheet: { flex: 0.85, backgroundColor: '#FFF', padding: 24, paddingTop: 60, borderTopLeftRadius: 30, borderBottomLeftRadius: 30 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', flexDirection: 'row' },
+  modalBackdrop: { flex: 0.2 },
+  profileSheet: { flex: 0.8, backgroundColor: '#FFF', padding: 24, paddingTop: 60, borderTopLeftRadius: 30, borderBottomLeftRadius: 30 },
   profileHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 },
   profileTitle: { fontSize: 24, fontWeight: 'bold' },
   profileUserInfo: { alignItems: 'center', marginBottom: 20 },
-  largeAvatar: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#3B82F6', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
-  largeAvatarText: { color: '#FFF', fontSize: 30, fontWeight: 'bold' },
-  userName: { fontSize: 20, fontWeight: 'bold' },
+  largeAvatar: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  largeAvatarText: { color: '#FFF', fontSize: 32, fontWeight: 'bold' },
+  userName: { fontSize: 22, fontWeight: 'bold', color: '#1E293B' },
   userEmail: { fontSize: 14, color: '#64748B' },
-  separator: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 25 },
+  separator: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 20 },
   configItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   configItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  configIconBox: { width: 45, height: 45, backgroundColor: '#F8FAFC', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  configItemTitle: { fontSize: 16, fontWeight: '600' },
+  configIconBox: { width: 48, height: 48, backgroundColor: '#F8FAFC', borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  configItemTitle: { fontSize: 16, fontWeight: '700', color: '#1E293B' },
   configItemSub: { fontSize: 12, color: '#94A3B8' },
-  btnSignOut: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: '#EF4444', borderRadius: 15, height: 55 },
+  btnSignOut: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderWidth: 1, borderColor: '#EF4444', borderRadius: 16, height: 56 },
   btnSignOutText: { color: '#EF4444', fontWeight: 'bold', fontSize: 16 }
 });
