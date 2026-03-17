@@ -18,7 +18,7 @@ import {
 import { 
   Bell, RefreshCw, Plus, Thermometer, Droplets, Wind, 
   LayoutGrid, Building2, Zap, BarChart3, ChevronRight,
-  FileText, X, User, LogOut, ChevronDown, Edit2, Trash2
+  FileText, X, User, LogOut, ChevronDown, Edit2, Trash2, Atom
 } from 'lucide-react-native';
 import { LineChart } from "react-native-chart-kit";
 import Svg, { Circle } from 'react-native-svg';
@@ -52,18 +52,23 @@ function AqiGauge({ value }: { value: number }) {
   const circumference = radius * 2 * Math.PI;
   const totalArcLength = circumference * 0.75; 
   const gap = circumference - totalArcLength;
-  const percentage = Math.min(value / 1000, 1); 
+  
+  // Ajuste para escala de 0 a 100 (Qualidade do Ar em %)
+  const percentage = Math.min(value / 100, 1); 
   const progressLength = totalArcLength * percentage;
+
+  // Cor dinâmica: Verde para alta qualidade, Amarelo/Laranja para baixa
+  const strokeColor = value > 80 ? "#84CC16" : value > 50 ? "#EAB308" : "#EF4444";
 
   return (
     <View style={styles.gaugeContainer}>
       <Svg width={size} height={size} style={{ transform: [{ rotate: '135deg' }] }}>
         <Circle cx={center} cy={center} r={radius} stroke="#F1F5F9" strokeWidth={strokeWidth} strokeDasharray={`${totalArcLength} ${gap}`} strokeLinecap="round" fill="none" />
-        <Circle cx={center} cy={center} r={radius} stroke="#84CC16" strokeWidth={strokeWidth} strokeDasharray={`${progressLength} ${circumference}`} strokeLinecap="round" fill="none" />
+        <Circle cx={center} cy={center} r={radius} stroke={strokeColor} strokeWidth={strokeWidth} strokeDasharray={`${progressLength} ${circumference}`} strokeLinecap="round" fill="none" />
       </Svg>
       <View style={styles.gaugeTextOverlay}>
         <Text style={styles.gaugeValue}>{value}</Text>
-        <Text style={styles.gaugeLabel}>PPM</Text>
+        <Text style={styles.gaugeLabel}>% QUALIDADE</Text>
       </View>
     </View>
   );
@@ -94,37 +99,51 @@ export default function DashboardScreen() {
 
   const [userData, setUserData] = useState({ nome: 'Carregando...', email: '', iniciais: '..' });
   const [ambientes, setAmbientes] = useState<AmbienteData[]>([]);
-  const [medias, setMedias] = useState({ temp: 0, hum: 0, co2: 0 });
+  
+  // Estado de médias atualizado para refletir a nova estrutura
+  const [medias, setMedias] = useState({ 
+    temp: 0, 
+    hum: 0, 
+    co2: 0, 
+    qualidadeAr: 0 
+  });
 
   useEffect(() => {
     const user = auth.currentUser;
     if (user) {
       const empresasRef = ref(database, 'empresas');
+      
       onValue(empresasRef, (snapshot) => {
         const data = snapshot.val();
         if (data) {
           let nomeEncontrado = user.displayName || "Usuário";
           let listaAmbientes: AmbienteData[] = [];
           let listaNomesAmbientes: string[] = [];
-          
+
           Object.keys(data).forEach(empresaKey => {
             const empresaNode = data[empresaKey];
             const usuarios = empresaNode.usuarios;
+            
             if (usuarios && Object.values(usuarios).some((u: any) => u.uid === user.uid)) {
+              // 1. Identifica o usuário logado e formata o nome
               Object.keys(usuarios).forEach(uk => {
                 if (usuarios[uk].uid === user.uid) nomeEncontrado = uk.replace(/_/g, ' ');
               });
+
+              // 2. Mapeia os ambientes da empresa
               const ambientesNode = empresaNode.ambientes;
               if (ambientesNode) {
                 Object.keys(ambientesNode).forEach(ambKey => {
                   if (ambKey !== 'Ambiente_1') listaNomesAmbientes.push(ambKey.replace(/_/g, ' '));
+                  
                   const amb = ambientesNode[ambKey];
                   listaAmbientes.push({
                     id: ambKey,
                     nomeExibicao: ambKey.replace(/_/g, ' '),
-                    temperatura: Number(amb.sensores?.Temperatura) || 0,
-                    umidade: Number(amb.sensores?.Umidade) || 0,
-                    co2: Number(amb.sensores?.CO2) || 0,
+                    // Verificação flexível para Maiúsculas/Minúsculas vinda do sensor
+                    temperatura: Number(amb.sensores?.Temperatura || amb.sensores?.temperatura) || 0,
+                    umidade: Number(amb.sensores?.Umidade || amb.sensores?.umidade) || 0,
+                    co2: Number(amb.sensores?.CO2 || amb.sensores?.co2) || 0,
                     tipo: amb.características?.tipo || '',
                     area: amb.características?.area || '',
                     capacidade: amb.características?.capacidade || '',
@@ -132,18 +151,28 @@ export default function DashboardScreen() {
                   });
                 });
               }
+
+              // 3. CAPTURA MÉDIAS DA PASTA "INFO" E CALCULA UMIDADE
+              const infoNode = empresaNode.info;
+              const listaFiltrada = listaAmbientes.filter(amb => amb.id !== 'Ambiente_1');
+              
+              // A umidade média calculamos em tempo real baseada nos sensores ativos
+              const hMedia = listaFiltrada.length > 0 
+                ? Math.round(listaFiltrada.reduce((acc, curr) => acc + curr.umidade, 0) / listaFiltrada.length)
+                : 0;
+
+              setMedias({
+                temp: Number(infoNode?.temperatura_media) || 0,
+                co2: Number(infoNode?.co2_medio) || 0,
+                qualidadeAr: Number(infoNode?.qual_do_ar) || 0,
+                hum: hMedia 
+              });
             }
           });
-          const listaFiltrada = listaAmbientes.filter(amb => amb.id !== 'Ambiente_1');
-          if (listaFiltrada.length > 0) {
-            const t = listaFiltrada.reduce((acc, curr) => acc + curr.temperatura, 0) / listaFiltrada.length;
-            const h = listaFiltrada.reduce((acc, curr) => acc + curr.umidade, 0) / listaFiltrada.length;
-            const c = listaFiltrada.reduce((acc, curr) => acc + curr.co2, 0) / listaFiltrada.length;
-            setMedias({ temp: parseFloat(t.toFixed(1)), hum: Math.round(h), co2: Math.round(c) });
-          }
+
           const iniciais = nomeEncontrado.split(' ').filter(n => n.length > 0).map(n => n[0]).join('').slice(0, 2).toUpperCase();
           setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais });
-          setAmbientes(listaFiltrada);
+          setAmbientes(listaAmbientes.filter(amb => amb.id !== 'Ambiente_1'));
           setAmbientesDisponiveis(listaNomesAmbientes);
         }
       });
@@ -270,10 +299,11 @@ export default function DashboardScreen() {
         </View>
 
         <View style={styles.metricsGrid}>
-          <MetricCard label="Temp. Média" value={medias.temp} unit="°C" icon={<Thermometer color="#FFF" size={32} />} iconBg="#10B981" />
-          <MetricCard label="Umidade Média" value={medias.hum} unit="%" icon={<Droplets color="#FFF" size={32} />} iconBg="#10B981" />
-          <MetricCard label="CO₂ Médio" value={medias.co2} unit="ppm" icon={<LayoutGrid color="#FFF" size={32} />} iconBg="#10B981" />
-          <MetricCard label="Ambientes" value={ambientes.length} unit="Locais" icon={<Building2 color="#FFF" size={32} />} iconBg="#2563EB" />
+          {/* CARDS COM CORES CORRIGIDAS E VALORES DO FIREBASE */}
+          <MetricCard label="Temp. Média" value={medias.temp} unit="°C" icon={<Thermometer color="#FFF" size={32} />} iconBg="#2563eb" />
+          <MetricCard label="Umidade Média" value={medias.hum} unit="%" icon={<Droplets color="#FFF" size={32} />} iconBg="#2563eb" />
+          <MetricCard label="CO₂ Médio" value={medias.co2} unit="ppm" icon={<Atom color="#FFF" size={32} />} iconBg="#2563eb" />
+          <MetricCard label="Ambientes" value={ambientes.length} unit="Locais" icon={<Building2 color="#FFF" size={32} />} iconBg="#2563eb" />
         </View>
 
         <View style={styles.sectionCard}>
@@ -283,8 +313,10 @@ export default function DashboardScreen() {
 
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitleCenter}>Qualidade do Ar Geral</Text>
-          <AqiGauge value={medias.co2} />
-          <Text style={[styles.statusText, { color: medias.co2 < 800 ? '#84CC16' : '#EAB308' }]}>{medias.co2 < 800 ? 'Excelente' : 'Regular'}</Text>
+          <AqiGauge value={medias.qualidadeAr} />
+          <Text style={[styles.statusText, { color: medias.qualidadeAr > 70 ? '#2415a4' : '#14dd90' }]}>
+            {medias.qualidadeAr > 80 ? 'Excelente' : medias.qualidadeAr > 50 ? 'Bom' : 'Alerta'}
+          </Text>
         </View>
 
         <View style={styles.listHeader}>
@@ -389,14 +421,38 @@ export default function DashboardScreen() {
         </View>
       </Modal>
 
-      {/* PERFIL */}
-      <Modal animationType="fade" transparent={true} visible={isProfileVisible}>
+      {/* MODAL PERFIL */}
+      <Modal animationType="fade" transparent={true} visible={isProfileVisible} onRequestClose={() => setIsProfileVisible(false)}>
         <View style={styles.modalOverlay}>
           <Pressable style={styles.modalBackdrop} onPress={() => setIsProfileVisible(false)} />
           <View style={styles.profileSheet}>
-            <View style={styles.profileHeader}><Text style={styles.profileTitle}>Perfil</Text><TouchableOpacity onPress={() => setIsProfileVisible(false)}><X color="#94A3B8" size={30} /></TouchableOpacity></View>
-            <View style={styles.profileUserInfo}><View style={styles.largeAvatar}><Text style={styles.largeAvatarText}>{userData.iniciais}</Text></View><Text style={styles.userName}>{userData.nome}</Text><Text style={styles.userEmail}>{userData.email}</Text></View>
-            <TouchableOpacity style={[styles.btnSignOut, { marginTop: 25 }]} onPress={handleLogout}><LogOut color="#EF4444" size={20} /><Text style={styles.btnSignOutText}>Sair da conta</Text></TouchableOpacity>
+            <View style={styles.profileHeader}>
+              <Text style={styles.profileTitle}>Perfil</Text>
+              <TouchableOpacity onPress={() => setIsProfileVisible(false)}><X color="#94A3B8" size={30} /></TouchableOpacity>
+            </View>
+            
+            <View style={styles.profileUserInfo}>
+              <View style={styles.largeAvatar}><Text style={styles.largeAvatarText}>{userData.iniciais}</Text></View>
+              <Text style={styles.userName}>{userData.nome}</Text>
+              <Text style={styles.userEmail}>{userData.email}</Text>
+            </View>
+
+            <View style={styles.separator} />
+
+            <TouchableOpacity style={styles.configItem} onPress={() => { setIsProfileVisible(false); router.push('/profile'); }}>
+              <View style={styles.configItemLeft}>
+                <View style={styles.configIconBox}><User color="#1E293B" size={22} /></View>
+                <View>
+                  <Text style={styles.configItemTitle}>Minha Conta</Text>
+                  <Text style={styles.configItemSub}>Dados Pessoais</Text>
+                </View>
+              </View>
+              <ChevronRight color="#1E293B" size={20} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.btnSignOut, { marginTop: 25 }]} onPress={handleLogout}>
+              <LogOut color="#EF4444" size={20} /><Text style={styles.btnSignOutText}>Sair da conta</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -412,7 +468,7 @@ export default function DashboardScreen() {
   );
 }
 
-// COMPONENTES AUXILIARES COM O DESIGN AZUL ATUALIZADO
+// COMPONENTES AUXILIARES
 function MetricCard({ label, value, unit, icon, iconBg }: any) {
   return (
     <View style={styles.metricCard}>
@@ -442,7 +498,7 @@ function RoomCard({ name, type, temp, hum, aqi, icon, onPress, onPressArrow }: a
       <View style={styles.metricsRow}>
         <View style={styles.metricBox}><Thermometer size={16} color="#EF4444" /><Text style={styles.metricValueCard}>{temp}</Text><Text style={styles.metricLabelCard}>Temp</Text></View>
         <View style={styles.metricBox}><Droplets size={16} color="#3B82F6" /><Text style={styles.metricValueCard}>{hum}</Text><Text style={styles.metricLabelCard}>Umidade</Text></View>
-        <View style={styles.metricBox}><Wind size={16} color="#0D9488" /><Text style={styles.metricValueCard}>{aqi}</Text><Text style={styles.metricLabelCard}>AQI</Text></View>
+        <View style={styles.metricBox}><Wind size={16} color="#0D9488" /><Text style={styles.metricValueCard}>{aqi}</Text><Text style={styles.metricLabelCard}>PPM</Text></View>
       </View>
     </TouchableOpacity>
   );
@@ -490,7 +546,6 @@ const styles = StyleSheet.create({
   listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 25, marginBottom: 15, paddingHorizontal: 20 },
   viewAll: { color: '#2563EB', fontWeight: '600' },
   
-  // DESIGN DOS CARDS (TELA AMBIENTES)
   roomCard: { backgroundColor: '#F0F9FF', borderRadius: 24, padding: 20, marginBottom: 15, borderWidth: 1, borderColor: '#BAE6FD', marginHorizontal: 20 },
   roomHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   roomInfoMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -505,6 +560,7 @@ const styles = StyleSheet.create({
   bottomTab: { position: 'absolute', bottom: 0, width: '100%', height: 75, backgroundColor: '#FFF', flexDirection: 'row', borderTopWidth: 1, borderColor: '#E2E8F0', paddingBottom: 15 },
   tabItem: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   activeIndicator: { position: 'absolute', bottom: 10, width: 4, height: 4, borderRadius: 2, backgroundColor: '#2563EB' },
+
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row' },
   modalBackdrop: { flex: 0.15 },
   profileSheet: { flex: 0.85, backgroundColor: '#FFF', padding: 24, paddingTop: 60, borderTopLeftRadius: 30, borderBottomLeftRadius: 30 },
@@ -515,8 +571,15 @@ const styles = StyleSheet.create({
   largeAvatarText: { color: '#FFF', fontSize: 28, fontWeight: 'bold' },
   userName: { fontSize: 18, fontWeight: 'bold' },
   userEmail: { fontSize: 13, color: '#64748B' },
+  separator: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 20 },
+  configItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  configItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  configIconBox: { width: 45, height: 45, backgroundColor: '#F8FAFC', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  configItemTitle: { fontSize: 16, fontWeight: '600', color: '#000' },
+  configItemSub: { fontSize: 12, color: '#94A3B8' },
   btnSignOut: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: '#EF4444', borderRadius: 12, height: 50 },
   btnSignOutText: { color: '#EF4444', fontWeight: 'bold' },
+
   actionMenu: { position: 'absolute', right: 40, top: 60, backgroundColor: '#FFF', borderRadius: 12, width: 130, elevation: 15, borderWidth: 1, borderColor: '#F1F5F9', padding: 5, zIndex: 999 },
   menuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 },
   menuText: { fontSize: 14, fontWeight: '500', color: '#475569' },
