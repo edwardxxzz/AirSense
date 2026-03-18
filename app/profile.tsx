@@ -268,7 +268,7 @@ function InputLabel({ label, icon, value, onChangeText, secureTextEntry, error, 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   topAppBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 5, backgroundColor: '#FFF' },
-  topLogo: { width: 140, height: 60 },
+  topLogo: { width: 140, height: 90 },
   headerIcons: { flexDirection: 'row', alignItems: 'center', gap: 15 },
   iconBadge: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   avatarCircleSmall: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center' },

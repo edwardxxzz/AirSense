@@ -430,7 +430,7 @@ function TabItem({ icon, active, onPress }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   topAppBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 5, backgroundColor: '#FFF' },
-  topLogo: { width: 140, height: 60 },
+  topLogo: { width: 140, height: 90 },
   headerIcons: { flexDirection: 'row', alignItems: 'center', gap: 15 },
   iconBadge: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   avatarCircle: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center' },
