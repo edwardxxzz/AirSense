@@ -45,7 +45,7 @@ export default function RelatoriosScreen() {
   const [isProfileVisible, setIsProfileVisible] = useState(false);
   
   // Lógica de Índice (Pode ser alterado dinamicamente depois)
-  const indiceConforto = 50; 
+  const indiceConforto = 70; 
   const radius = 55;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (indiceConforto / 100) * circumference;

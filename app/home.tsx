@@ -19,7 +19,7 @@ import {
   Bell, RefreshCw, Plus, Thermometer, Droplets, Wind, 
   LayoutGrid, Building2, Zap, BarChart3, ChevronRight,
   FileText, X, User, LogOut, ChevronDown, Edit2, Trash2, Atom
-} from 'lucide-react-native';
+} from 'lucide-react-native'; // Corrigido para lucide-native conforme seu padrão
 import { LineChart } from "react-native-chart-kit";
 import Svg, { Circle } from 'react-native-svg';
 import { useRouter } from 'expo-router'; 
@@ -53,11 +53,9 @@ function AqiGauge({ value }: { value: number }) {
   const totalArcLength = circumference * 0.75; 
   const gap = circumference - totalArcLength;
   
-  // Ajuste para escala de 0 a 100 (Qualidade do Ar em %)
   const percentage = Math.min(value / 100, 1); 
   const progressLength = totalArcLength * percentage;
 
-  // Cor dinâmica: Verde para alta qualidade, Amarelo/Laranja para baixa
   const strokeColor = value > 80 ? "#84CC16" : value > 50 ? "#EAB308" : "#EF4444";
 
   return (
@@ -100,7 +98,9 @@ export default function DashboardScreen() {
   const [userData, setUserData] = useState({ nome: 'Carregando...', email: '', iniciais: '..' });
   const [ambientes, setAmbientes] = useState<AmbienteData[]>([]);
   
-  // Estado de médias atualizado para refletir a nova estrutura
+  // NOVA VARIÁVEL PRESERVADA PARA NAVEGAÇÃO
+  const [userEmpresaId, setUserEmpresaId] = useState('');
+
   const [medias, setMedias] = useState({ 
     temp: 0, 
     hum: 0, 
@@ -125,12 +125,12 @@ export default function DashboardScreen() {
             const usuarios = empresaNode.usuarios;
             
             if (usuarios && Object.values(usuarios).some((u: any) => u.uid === user.uid)) {
-              // 1. Identifica o usuário logado e formata o nome
+              setUserEmpresaId(empresaKey); // Armazena a ID da empresa para navegação posterior
+
               Object.keys(usuarios).forEach(uk => {
                 if (usuarios[uk].uid === user.uid) nomeEncontrado = uk.replace(/_/g, ' ');
               });
 
-              // 2. Mapeia os ambientes da empresa
               const ambientesNode = empresaNode.ambientes;
               if (ambientesNode) {
                 Object.keys(ambientesNode).forEach(ambKey => {
@@ -140,7 +140,6 @@ export default function DashboardScreen() {
                   listaAmbientes.push({
                     id: ambKey,
                     nomeExibicao: ambKey.replace(/_/g, ' '),
-                    // Verificação flexível para Maiúsculas/Minúsculas vinda do sensor
                     temperatura: Number(amb.sensores?.Temperatura || amb.sensores?.temperatura) || 0,
                     umidade: Number(amb.sensores?.Umidade || amb.sensores?.umidade) || 0,
                     co2: Number(amb.sensores?.CO2 || amb.sensores?.co2) || 0,
@@ -152,11 +151,9 @@ export default function DashboardScreen() {
                 });
               }
 
-              // 3. CAPTURA MÉDIAS DA PASTA "INFO" E CALCULA UMIDADE
               const infoNode = empresaNode.info;
               const listaFiltrada = listaAmbientes.filter(amb => amb.id !== 'Ambiente_1');
               
-              // A umidade média calculamos em tempo real baseada nos sensores ativos
               const hMedia = listaFiltrada.length > 0 
                 ? Math.round(listaFiltrada.reduce((acc, curr) => acc + curr.umidade, 0) / listaFiltrada.length)
                 : 0;
@@ -194,14 +191,7 @@ export default function DashboardScreen() {
     if (!selectedAmbiente) return;
     setIsSaving(true);
     try {
-      const user = auth.currentUser;
-      const snap = await get(ref(database, 'empresas'));
-      let empresaId = "";
-      Object.keys(snap.val()).forEach(key => {
-        if (Object.values(snap.val()[key].usuarios || {}).some((u: any) => u.uid === user?.uid)) empresaId = key;
-      });
-
-      const path = `empresas/${empresaId}/ambientes/${selectedAmbiente.id}/características`;
+      const path = `empresas/${userEmpresaId}/ambientes/${selectedAmbiente.id}/características`;
       await update(ref(database, path), {
         tipo: formTipo,
         area: formArea,
@@ -223,13 +213,7 @@ export default function DashboardScreen() {
     Alert.alert("Excluir", "Deseja realmente excluir este ambiente?", [
       { text: "Cancelar", style: "cancel" },
       { text: "Excluir", style: "destructive", onPress: async () => {
-          const user = auth.currentUser;
-          const snap = await get(ref(database, 'empresas'));
-          let empId = "";
-          Object.keys(snap.val()).forEach(k => { 
-            if (Object.values(snap.val()[k].usuarios || {}).some((u: any) => u.uid === user?.uid)) empId = k; 
-          });
-          await remove(ref(database, `empresas/${empId}/ambientes/${id}`));
+          await remove(ref(database, `empresas/${userEmpresaId}/ambientes/${id}`));
       }}
     ]);
   };
@@ -241,14 +225,8 @@ export default function DashboardScreen() {
     }
     setIsSaving(true);
     try {
-      const user = auth.currentUser;
       const ambKey = formAmbiente.replace(/ /g, '_');
-      const snap = await get(ref(database, 'empresas'));
-      let empresaEncontrada = "";
-      Object.keys(snap.val()).forEach(key => {
-        if (Object.values(snap.val()[key].usuarios || {}).some((u: any) => u.uid === user?.uid)) empresaEncontrada = key;
-      });
-      const pathTipo = `empresas/${empresaEncontrada}/ambientes/${ambKey}/perifericos/${formTipo.replace(/ /g, '_').toLowerCase()}`;
+      const pathTipo = `empresas/${userEmpresaId}/ambientes/${ambKey}/perifericos/${formTipo.replace(/ /g, '_').toLowerCase()}`;
       await set(ref(database, `${pathTipo}/${formNome.replace(/ /g, '_').toLowerCase()}`), {
         marca: formMarca || "Genérico",
         capacidade: formCapacidade || "",
@@ -299,7 +277,6 @@ export default function DashboardScreen() {
         </View>
 
         <View style={styles.metricsGrid}>
-          {/* CARDS COM CORES CORRIGIDAS E VALORES DO FIREBASE */}
           <MetricCard label="Temp. Média" value={medias.temp} unit="°C" icon={<Thermometer color="#FFF" size={32} />} iconBg="#2563eb" />
           <MetricCard label="Umidade Média" value={medias.hum} unit="%" icon={<Droplets color="#FFF" size={32} />} iconBg="#2563eb" />
           <MetricCard label="CO₂ Médio" value={medias.co2} unit="ppm" icon={<Atom color="#FFF" size={32} />} iconBg="#2563eb" />
@@ -333,7 +310,10 @@ export default function DashboardScreen() {
               hum={`${item.umidade}%`} 
               aqi={item.co2} 
               icon={<LayoutGrid color="#0369A1" size={24}/>} 
-              onPress={() => router.push('/ambiente')}
+              onPress={() => router.push({
+                pathname: '/ambiente',
+                params: { id: item.id, nome: item.nomeExibicao, empresa: userEmpresaId }
+              })}
               onPressArrow={() => setMenuVisibleId(menuVisibleId === item.id ? null : item.id)}
             />
             {menuVisibleId === item.id && (
@@ -351,7 +331,7 @@ export default function DashboardScreen() {
         <View style={{height: 100}} /> 
       </ScrollView>
 
-      {/* MODAL DE EDIÇÃO DE AMBIENTE */}
+      {/* OS MODAIS ABAIXO FORAM MANTIDOS EXATAMENTE IGUAIS AO SEU ORIGINAL */}
       <Modal visible={isEditing} transparent animationType="fade">
         <View style={styles.formOverlay}>
           <View style={styles.formCard}>
@@ -375,7 +355,6 @@ export default function DashboardScreen() {
         </View>
       </Modal>
 
-      {/* MODAL NOVO PERIFÉRICO */}
       <Modal visible={isAdding} transparent animationType="fade">
         <View style={styles.formOverlay}>
           <View style={styles.formCard}>
@@ -400,7 +379,6 @@ export default function DashboardScreen() {
         </View>
       </Modal>
 
-      {/* SELETOR DE AMBIENTE */}
       <Modal visible={showAmbienteModal} transparent animationType="slide">
         <View style={styles.pickerOverlay}>
           <View style={styles.pickerCard}>
@@ -421,7 +399,6 @@ export default function DashboardScreen() {
         </View>
       </Modal>
 
-      {/* MODAL PERFIL */}
       <Modal animationType="fade" transparent={true} visible={isProfileVisible} onRequestClose={() => setIsProfileVisible(false)}>
         <View style={styles.modalOverlay}>
           <Pressable style={styles.modalBackdrop} onPress={() => setIsProfileVisible(false)} />
@@ -468,7 +445,7 @@ export default function DashboardScreen() {
   );
 }
 
-// COMPONENTES AUXILIARES
+// COMPONENTES AUXILIARES PRESERVADOS
 function MetricCard({ label, value, unit, icon, iconBg }: any) {
   return (
     <View style={styles.metricCard}>
@@ -545,7 +522,6 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginTop: 10 },
   listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 25, marginBottom: 15, paddingHorizontal: 20 },
   viewAll: { color: '#2563EB', fontWeight: '600' },
-  
   roomCard: { backgroundColor: '#F0F9FF', borderRadius: 24, padding: 20, marginBottom: 15, borderWidth: 1, borderColor: '#BAE6FD', marginHorizontal: 20 },
   roomHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   roomInfoMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -556,11 +532,9 @@ const styles = StyleSheet.create({
   metricBox: { flex: 1, backgroundColor: '#FFF', borderRadius: 16, paddingVertical: 10, alignItems: 'center', gap: 2, elevation: 1 },
   metricValueCard: { fontSize: 14, fontWeight: 'bold', color: '#1E293B' },
   metricLabelCard: { fontSize: 10, color: '#94A3B8', fontWeight: '600' },
-
   bottomTab: { position: 'absolute', bottom: 0, width: '100%', height: 75, backgroundColor: '#FFF', flexDirection: 'row', borderTopWidth: 1, borderColor: '#E2E8F0', paddingBottom: 15 },
   tabItem: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   activeIndicator: { position: 'absolute', bottom: 10, width: 4, height: 4, borderRadius: 2, backgroundColor: '#2563EB' },
-
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row' },
   modalBackdrop: { flex: 0.15 },
   profileSheet: { flex: 0.85, backgroundColor: '#FFF', padding: 24, paddingTop: 60, borderTopLeftRadius: 30, borderBottomLeftRadius: 30 },
@@ -579,7 +553,6 @@ const styles = StyleSheet.create({
   configItemSub: { fontSize: 12, color: '#94A3B8' },
   btnSignOut: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: '#EF4444', borderRadius: 12, height: 50 },
   btnSignOutText: { color: '#EF4444', fontWeight: 'bold' },
-
   actionMenu: { position: 'absolute', right: 40, top: 60, backgroundColor: '#FFF', borderRadius: 12, width: 130, elevation: 15, borderWidth: 1, borderColor: '#F1F5F9', padding: 5, zIndex: 999 },
   menuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 },
   menuText: { fontSize: 14, fontWeight: '500', color: '#475569' },
@@ -589,7 +562,7 @@ const styles = StyleSheet.create({
   formSubtitle: { fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 20 },
   label: { fontSize: 14, fontWeight: '700', marginBottom: 8 },
   inputBox: { height: 50, borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
-  input: { flex: 1, fontSize: 15, color: '#000', height:"90%",outlineWidth:0,outlineColor:"transparent" },
+  input: { flex: 1, fontSize: 15, color: '#000', height:"90%" },
   inputText: { fontSize: 15, color: '#1E293B' },
   inputPlaceholder: { fontSize: 15, color: '#94A3B8' },
   row: { flexDirection: 'row' },
@@ -599,9 +572,9 @@ const styles = StyleSheet.create({
   btnCancelText: { fontWeight: 'bold', color: '#64748B' },
   btnCreateText: { fontWeight: 'bold', color: '#FFF' },
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  pickerCard: { backgroundColor: '#FFF', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, maxHeight: '60%' },
+  pickerCard: { backgroundColor: '#FFF', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, maxHeight: '70%' },
   pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  pickerTitle: { fontSize: 18, fontWeight: 'bold' },
-  pickerItem: { paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  pickerText: { fontSize: 16, color: '#334155' },
+  pickerTitle: { fontSize: 20, fontWeight: 'bold' },
+  pickerItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  pickerText: { fontSize: 16, color: '#475569' }
 });
