@@ -19,15 +19,26 @@ import {
   Bell, RefreshCw, Plus, Thermometer, Droplets, Wind, 
   LayoutGrid, Building2, Zap, BarChart3, ChevronRight,
   FileText, X, User, LogOut, ChevronDown, Edit2, Trash2, Atom
-} from 'lucide-react-native'; // Corrigido para lucide-native conforme seu padrão
+} from 'lucide-react-native';
 import { LineChart } from "react-native-chart-kit";
 import Svg, { Circle } from 'react-native-svg';
 import { useRouter } from 'expo-router'; 
 
-// --- FIREBASE ---
-import { auth, database } from '../services/firebaseConfig';
-import { ref, onValue, get, set, remove, update } from "firebase/database";
+// --- FIREBASE SERVICES ---
+import { auth, db } from '../services/firebaseConfig';
 import { signOut } from "firebase/auth";
+import { 
+  doc, 
+  onSnapshot, 
+  updateDoc, 
+  setDoc, 
+  deleteDoc, 
+  collection, 
+  query, 
+  where, 
+  collectionGroup, 
+  getDocs 
+} from "firebase/firestore";
 
 const { width } = Dimensions.get('window');
 const LogoImg = require('../assets/images/logo.png'); 
@@ -44,6 +55,7 @@ interface AmbienteData {
   andar?: string;
 }
 
+// --- COMPONENTE GAUGE ---
 function AqiGauge({ value }: { value: number }) {
   const size = 180;
   const strokeWidth = 15;
@@ -97,8 +109,6 @@ export default function DashboardScreen() {
 
   const [userData, setUserData] = useState({ nome: 'Carregando...', email: '', iniciais: '..' });
   const [ambientes, setAmbientes] = useState<AmbienteData[]>([]);
-  
-  // NOVA VARIÁVEL PRESERVADA PARA NAVEGAÇÃO
   const [userEmpresaId, setUserEmpresaId] = useState('');
 
   const [medias, setMedias] = useState({ 
@@ -110,72 +120,86 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     const user = auth.currentUser;
-    if (user) {
-      const empresasRef = ref(database, 'empresas');
-      
-      onValue(empresasRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          let nomeEncontrado = user.displayName || "Usuário";
-          let listaAmbientes: AmbienteData[] = [];
-          let listaNomesAmbientes: string[] = [];
+    if (!user) return;
 
-          Object.keys(data).forEach(empresaKey => {
-            const empresaNode = data[empresaKey];
-            const usuarios = empresaNode.usuarios;
+    const loadData = async () => {
+      try {
+        // 1. Encontrar a empresa do usuário logado
+        const userQuery = query(collectionGroup(db, 'usuarios'), where('userId', '==', user.uid));
+        const userSnapshot = await getDocs(userQuery);
+
+        if (!userSnapshot.empty) {
+          const userDoc = userSnapshot.docs[0];
+          const empresaId = userDoc.ref.parent.parent?.id;
+
+          if (empresaId) {
+            setUserEmpresaId(empresaId);
             
-            if (usuarios && Object.values(usuarios).some((u: any) => u.uid === user.uid)) {
-              setUserEmpresaId(empresaKey); // Armazena a ID da empresa para navegação posterior
+            const dataUser = userDoc.data();
+            const nomeEncontrado = dataUser.userName || "Usuário";
+            const iniciais = nomeEncontrado.split(' ').filter((n:string) => n.length > 0).map((n:string) => n[0]).join('').slice(0, 2).toUpperCase();
+            
+            setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais });
 
-              Object.keys(usuarios).forEach(uk => {
-                if (usuarios[uk].uid === user.uid) nomeEncontrado = uk.replace(/_/g, ' ');
-              });
-
-              const ambientesNode = empresaNode.ambientes;
-              if (ambientesNode) {
-                Object.keys(ambientesNode).forEach(ambKey => {
-                  if (ambKey !== 'Ambiente_1') listaNomesAmbientes.push(ambKey.replace(/_/g, ' '));
-                  
-                  const amb = ambientesNode[ambKey];
-                  listaAmbientes.push({
-                    id: ambKey,
-                    nomeExibicao: ambKey.replace(/_/g, ' '),
-                    temperatura: Number(amb.sensores?.Temperatura || amb.sensores?.temperatura) || 0,
-                    umidade: Number(amb.sensores?.Umidade || amb.sensores?.umidade) || 0,
-                    co2: Number(amb.sensores?.CO2 || amb.sensores?.co2) || 0,
-                    tipo: amb.características?.tipo || '',
-                    area: amb.características?.area || '',
-                    capacidade: amb.características?.capacidade || '',
-                    andar: amb.características?.andar || '',
-                  });
-                });
+            // 2. Ouvinte para as Médias Gerais
+            const unsubConfig = onSnapshot(doc(db, "empresas", empresaId, "config", "geral"), (docSnap) => {
+              if (docSnap.exists()) {
+                const d = docSnap.data();
+                setMedias(prev => ({
+                  ...prev,
+                  temp: d.temperatura_media || 0,
+                  co2: d.co2_medio || 0,
+                  qualidadeAr: d.qual_do_ar || 0
+                }));
               }
+            });
 
-              const infoNode = empresaNode.info;
-              const listaFiltrada = listaAmbientes.filter(amb => amb.id !== 'Ambiente_1');
-              
-              const hMedia = listaFiltrada.length > 0 
-                ? Math.round(listaFiltrada.reduce((acc, curr) => acc + curr.umidade, 0) / listaFiltrada.length)
-                : 0;
+            // 3. Ouvinte para Ambientes
+            const unsubAmbientes = onSnapshot(collection(db, "empresas", empresaId, "ambientes"), (querySnapshot) => {
+              const lista: AmbienteData[] = [];
+              const nomesParaSelect: string[] = [];
 
-              setMedias({
-                temp: Number(infoNode?.temperatura_media) || 0,
-                co2: Number(infoNode?.co2_medio) || 0,
-                qualidadeAr: Number(infoNode?.qual_do_ar) || 0,
-                hum: hMedia 
+              querySnapshot.forEach((docAmb) => {
+                const amb = docAmb.data();
+                // Preservando seu filtro original de Ambiente_1
+                if (docAmb.id !== 'Ambiente_1') {
+                  nomesParaSelect.push(docAmb.id.replace(/_/g, ' '));
+                  lista.push({
+                    id: docAmb.id,
+                    nomeExibicao: docAmb.id.replace(/_/g, ' '),
+                    temperatura: Number(amb.sensores?.temperatura || 0),
+                    umidade: Number(amb.sensores?.umidade || 0),
+                    co2: Number(amb.sensores?.co2 || 0),
+                    tipo: amb.tipo || '',
+                    area: amb.area || '',
+                    capacidade: amb.capacidade || '',
+                    andar: amb.andar || '',
+                  });
+                }
               });
-            }
-          });
 
-          const iniciais = nomeEncontrado.split(' ').filter(n => n.length > 0).map(n => n[0]).join('').slice(0, 2).toUpperCase();
-          setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais });
-          setAmbientes(listaAmbientes.filter(amb => amb.id !== 'Ambiente_1'));
-          setAmbientesDisponiveis(listaNomesAmbientes);
+              setAmbientes(lista);
+              setAmbientesDisponiveis(nomesParaSelect);
+
+              const hMedia = lista.length > 0 
+                ? Math.round(lista.reduce((acc, curr) => acc + curr.umidade, 0) / lista.length)
+                : 0;
+              setMedias(prev => ({ ...prev, hum: hMedia }));
+            });
+
+            return () => { unsubConfig(); unsubAmbientes(); };
+          }
         }
-      });
-    }
-  }, []);
+      } catch (error) {
+        console.error("Erro ao carregar Dashboard:", error);
+      }
+    };
 
+    loadData();
+  }, [refreshKey]);
+
+  // --- LOGICA DE ATUALIZAÇÃO ---
+  // --- FUNÇÃO PARA ABRIR O MODAL DE EDIÇÃO ---
   const handleOpenEdit = (item: AmbienteData) => {
     setSelectedAmbiente(item);
     setFormNome(item.nomeExibicao);
@@ -184,21 +208,19 @@ export default function DashboardScreen() {
     setFormCapacidade(item.capacidade ? String(item.capacidade) : '');
     setFormAndar(item.andar || '');
     setIsEditing(true);
-    setMenuVisibleId(null);
+    setMenuVisibleId(null); // Fecha o mini-menu ao abrir o modal
   };
-
   const handleUpdateAmbiente = async () => {
-    if (!selectedAmbiente) return;
+    if (!selectedAmbiente || !userEmpresaId) return;
     setIsSaving(true);
     try {
-      const path = `empresas/${userEmpresaId}/ambientes/${selectedAmbiente.id}/características`;
-      await update(ref(database, path), {
+      const ambRef = doc(db, "empresas", userEmpresaId, "ambientes", selectedAmbiente.id);
+      await updateDoc(ambRef, {
         tipo: formTipo,
         area: formArea,
         capacidade: formCapacidade,
         andar: formAndar
       });
-
       Alert.alert("Sucesso", "Ambiente atualizado!");
       setIsEditing(false);
     } catch (e) {
@@ -213,29 +235,40 @@ export default function DashboardScreen() {
     Alert.alert("Excluir", "Deseja realmente excluir este ambiente?", [
       { text: "Cancelar", style: "cancel" },
       { text: "Excluir", style: "destructive", onPress: async () => {
-          await remove(ref(database, `empresas/${userEmpresaId}/ambientes/${id}`));
+          try {
+            await deleteDoc(doc(db, "empresas", userEmpresaId, "ambientes", id));
+          } catch (e) { Alert.alert("Erro", "Falha ao deletar."); }
       }}
     ]);
   };
 
   const handleSalvarPeriferico = async () => {
-    if (!formAmbiente || !formNome || !formTipo) {
+    if (!formAmbiente || !formNome || !formTipo || !userEmpresaId) {
       Alert.alert("Atenção", "Preencha todos os campos obrigatórios (*)");
       return;
     }
     setIsSaving(true);
     try {
       const ambKey = formAmbiente.replace(/ /g, '_');
-      const pathTipo = `empresas/${userEmpresaId}/ambientes/${ambKey}/perifericos/${formTipo.replace(/ /g, '_').toLowerCase()}`;
-      await set(ref(database, `${pathTipo}/${formNome.replace(/ /g, '_').toLowerCase()}`), {
+      const periKey = formNome.replace(/ /g, '_').toLowerCase();
+      
+      const periRef = doc(db, "empresas", userEmpresaId, "ambientes", ambKey, "perifericos", periKey);
+      
+      await setDoc(periRef, {
         marca: formMarca || "Genérico",
         capacidade: formCapacidade || "",
-        status: false
+        status: false,
+        tipo: formTipo
       });
+
       setIsAdding(false);
       setFormNome(''); setFormAmbiente(''); setFormTipo('');
       Alert.alert("Sucesso", "Novo dispositivo cadastrado!");
-    } catch (error) { Alert.alert("Erro", "Falha ao salvar."); } finally { setIsSaving(false); }
+    } catch (error) { 
+      Alert.alert("Erro", "Falha ao salvar."); 
+    } finally { 
+      setIsSaving(false); 
+    }
   };
 
   const handleLogout = async () => {
@@ -252,7 +285,7 @@ export default function DashboardScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} key={refreshKey}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.topAppBar}>
         <Image source={LogoImg} style={styles.topLogo} resizeMode="contain" />
         <View style={styles.headerIcons}>
@@ -331,7 +364,7 @@ export default function DashboardScreen() {
         <View style={{height: 100}} /> 
       </ScrollView>
 
-      {/* OS MODAIS ABAIXO FORAM MANTIDOS EXATAMENTE IGUAIS AO SEU ORIGINAL */}
+      {/* --- MODAIS --- */}
       <Modal visible={isEditing} transparent animationType="fade">
         <View style={styles.formOverlay}>
           <View style={styles.formCard}>
@@ -414,7 +447,7 @@ export default function DashboardScreen() {
               <Text style={styles.userEmail}>{userData.email}</Text>
             </View>
 
-            <View style={styles.separator} />
+            <View style={styles.separatorLine} />
 
             <TouchableOpacity style={styles.configItem} onPress={() => { setIsProfileVisible(false); router.push('/profile'); }}>
               <View style={styles.configItemLeft}>
@@ -445,7 +478,7 @@ export default function DashboardScreen() {
   );
 }
 
-// COMPONENTES AUXILIARES PRESERVADOS
+// --- COMPONENTES AUXILIARES ---
 function MetricCard({ label, value, unit, icon, iconBg }: any) {
   return (
     <View style={styles.metricCard}>
@@ -463,11 +496,7 @@ function RoomCard({ name, type, temp, hum, aqi, icon, onPress, onPressArrow }: a
           <View style={styles.roomIconBox}>{icon}</View>
           <View><Text style={styles.roomName}>{name}</Text><Text style={styles.roomType}>{type}</Text></View>
         </View>
-        <TouchableOpacity 
-          onPress={onPressArrow} 
-          hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
-          style={{padding: 5}}
-        >
+        <TouchableOpacity onPress={onPressArrow} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}} style={{padding: 5}}>
           <ChevronDown color="#64748B" size={22} />
         </TouchableOpacity>
       </View>
@@ -545,7 +574,7 @@ const styles = StyleSheet.create({
   largeAvatarText: { color: '#FFF', fontSize: 28, fontWeight: 'bold' },
   userName: { fontSize: 18, fontWeight: 'bold' },
   userEmail: { fontSize: 13, color: '#64748B' },
-  separator: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 20 },
+  separatorLine: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 20 },
   configItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   configItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   configIconBox: { width: 45, height: 45, backgroundColor: '#F8FAFC', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },

@@ -32,11 +32,15 @@ export default function LoginScreen() {
   const router = useRouter();
   const [tab, setTab] = useState('Entrar');
   const [cadStep, setCadStep] = useState(1);
+  
+  // Estados dos Inputs
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [company, setCompany] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  
+  // Estados de UI
   const [secureText, setSecureText] = useState(true);
   const [secureTextConfirm, setSecureTextConfirm] = useState(true);
   const [agreeTerms, setAgreeTerms] = useState(false);
@@ -81,33 +85,35 @@ export default function LoginScreen() {
     }
   };
 
-  // --- SIGN UP LOGIC (FIRESTORE STRUCTURE) ---
+  // --- SIGN UP LOGIC (Passo a Passo da Lógica) ---
   const handleSignUp = async () => {
     try {
+      console.log("Iniciando cadastro...");
+      
+      // 1. Criar usuário no Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const uid = userCredential.user.uid;
+      console.log("Usuário criado no Auth com UID:", uid);
+
+      // 2. Gerar ID seguro para a empresa (remove caracteres proibidos do Firestore)
       const safeCompany = company.trim().replace(/[.#$[\]]/g, "_");
+      console.log("ID da Empresa:", safeCompany);
 
-      // 1. Criar Vínculo Global do Usuário (para saber a qual empresa ele pertence no login)
-      await setDoc(doc(db, "usuarios", uid), {
-        uid: uid,
-        email: email.toLowerCase().trim(),
-        empresaId: safeCompany,
-        nome: fullName,
-        dataCadastro: new Date().toISOString()
-      });
-
-      // 2. Criar Documento da Empresa
+      // 3. Referência do documento da empresa
       const empresaRef = doc(db, "empresas", safeCompany);
       const empresaSnap = await getDoc(empresaRef);
 
+      // 4. Se a empresa NÃO existe, criar a estrutura inicial (Empresa, Config, Ambientes)
       if (!empresaSnap.exists()) {
+        console.log("Criando estrutura da empresa...");
+        
+        // Cria doc da empresa
         await setDoc(empresaRef, {
           nome: safeCompany,
           criadoEm: new Date().toISOString()
         });
 
-        // 3. Criar Subcoleção 'config' (Antigo 'info')
+        // Cria subcoleção 'config' (Irmão de usuarios)
         await setDoc(doc(db, "empresas", safeCompany, "config", "geral"), {
           co2_medio: 0,
           indice_conforto: 0,
@@ -115,36 +121,34 @@ export default function LoginScreen() {
           temperatura_media: 0
         });
 
-        // 4. Criar primeiro Ambiente na Subcoleção 'ambientes'
+        // Cria subcoleção 'ambientes' (Irmão de usuarios)
         await setDoc(doc(db, "empresas", safeCompany, "ambientes", "Ambiente_1"), {
           nome: "Ambiente 1",
           tipo: "Geral",
           localizacao: "Principal",
-          sensores: {
-            co2: 764, // Valores baseados no seu design
-            temperatura: 24.5,
-            umidade: 43,
-            particulas: 10.2
-          },
-          perifericos: {
-            ar_condicionado: {
-              geral: { status: false, marca: "Genérico", capacidade: "" }
-            }
-          }
+          sensores: { co2: 764, temperatura: 24.5, umidade: 43, particulas: 10.2 },
+          perifericos: { ar_condicionado: { geral: { status: false, marca: "Genérico", capacidade: "" } } }
         });
       }
 
-      // 5. Adicionar usuário à lista interna da empresa
+      // 5. Criar o documento do Usuário como IRMÃO de ambientes e config
+      // Caminho: empresas -> safeCompany -> usuarios -> uid
+      console.log("Salvando dados do usuário no Firestore...");
+      
       await setDoc(doc(db, "empresas", safeCompany, "usuarios", uid), {
-        nome: fullName,
         email: email.toLowerCase().trim(),
-        uid: uid,
-        dataCadastro: new Date().toISOString()
+        userName: fullName,          // Campo: User Name
+        userId: uid,                 // Campo: User ID
+        dataLogin: new Date().toISOString(), // Campo: Data de Login
+        senha: "Gerenciada pelo Firebase Auth" // Apenas placeholder visual
       });
 
-      Alert.alert("Sucesso", "Conta e Empresa criadas com sucesso!");
+      console.log("Cadastro completo!");
+      Alert.alert("Sucesso", "Conta criada com sucesso!");
       router.replace('/home');
+      
     } catch (error: any) {
+      console.error("Erro no cadastro:", error);
       Alert.alert("Erro no cadastro", error.message);
     }
   };
@@ -157,7 +161,7 @@ export default function LoginScreen() {
     } catch (error: any) { Alert.alert("Erro", "E-mail não encontrado."); }
   };
 
-  // --- DESIGN REMAINS 100% PRESERVED ---
+  // --- DESIGN PRESERVADO ---
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
