@@ -21,10 +21,24 @@ import {
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router'; 
 
-// --- FIREBASE ---
-import { auth, database } from '../services/firebaseConfig';
-import { ref, onValue, get, set, remove, update } from "firebase/database";
-import { signOut } from "firebase/auth";
+// --- FIREBASE FIRESTORE MIGRATION ---
+import { auth, db } from '../services/firebaseConfig';
+import { 
+  signOut, 
+  onAuthStateChanged 
+} from "firebase/auth";
+import { 
+  collection, 
+  doc, 
+  onSnapshot, 
+  getDocs, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  collectionGroup 
+} from "firebase/firestore";
 
 const { width } = Dimensions.get('window');
 const LogoImg = require('../assets/images/logo.png'); 
@@ -56,7 +70,7 @@ export default function AmbientesScreen() {
   
   // Estados de Dados
   const [ambientes, setAmbientes] = useState<AmbienteData[]>([]);
-  const [empresaId, setEmpresaId] = useState(''); // <--- ADICIONADO PARA NAVEGAÇÃO
+  const [empresaId, setEmpresaId] = useState(''); 
   const [selectedAmbiente, setSelectedAmbiente] = useState<AmbienteData | null>(null);
   const [userData, setUserData] = useState({ 
     nome: 'Carregando...', 
@@ -72,56 +86,75 @@ export default function AmbientesScreen() {
   const [formAndar, setFormAndar] = useState('');
 
   useEffect(() => {
-    const user = auth.currentUser;
-    if (user) {
-      const empresasRef = ref(database, 'empresas');
-      onValue(empresasRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          let nomeEncontrado = user.displayName || "Usuário";
-          let listaAmbientes: AmbienteData[] = [];
-          
-          Object.keys(data).forEach(empresaKey => {
-            const empresaNode = data[empresaKey];
-            const usuarios = empresaNode.usuarios;
+    // Listener de autenticação para garantir que temos o user UID
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setUserData({ nome: 'Desconhecido', email: '', iniciais: '..' });
+        return;
+      }
 
-            if (usuarios && Object.values(usuarios).some((u: any) => u.uid === user.uid)) {
-              setEmpresaId(empresaKey); // <--- SALVA A KEY DA EMPRESA ATUAL
-              Object.keys(usuarios).forEach(uk => {
-                if (usuarios[uk].uid === user.uid) {
-                  nomeEncontrado = uk.replace(/_/g, ' ');
-                }
+      try {
+        // 1. Encontrar a empresa do usuário (via Collection Group)
+        const userQuery = query(collectionGroup(db, 'usuarios'), where('userId', '==', user.uid));
+        const userSnapshot = await getDocs(userQuery);
+
+        if (userSnapshot.empty) {
+          console.log("Usuário não encontrado em nenhuma empresa.");
+          return;
+        }
+
+        const userDoc = userSnapshot.docs[0];
+        const foundEmpresaId = userDoc.ref.parent.parent?.id;
+
+        if (foundEmpresaId) {
+          setEmpresaId(foundEmpresaId);
+
+          // Dados do usuário para o perfil
+          const dataUser = userDoc.data();
+          const nomeEncontrado = dataUser.userName || "Usuário";
+          const iniciais = nomeEncontrado.split(' ').filter((n: string) => n.length > 0).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+          setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais });
+
+          // 2. Listener de Ambientes (Firestore)
+          const ambientesRef = collection(db, "empresas", foundEmpresaId, "ambientes");
+          const unsubAmbientes = onSnapshot(ambientesRef, (snapshot) => {
+            const lista: AmbienteData[] = [];
+            
+            snapshot.forEach((docAmb) => {
+              const amb = docAmb.data();
+              
+              // Filtro para não exibir o Ambiente_1 (conforme lógica original)
+              if (docAmb.id === 'Ambiente_1') return;
+
+              const sensores = amb.sensores || {};
+              
+              lista.push({
+                id: docAmb.id,
+                nomeExibicao: docAmb.id.replace(/_/g, ' '),
+                // Ajuste para ler campos do Firestore (minúsculas conforme dashboard anterior)
+                temperatura: sensores.temperatura !== undefined ? `${sensores.temperatura}°` : '--',
+                umidade: sensores.umidade !== undefined ? `${sensores.umidade}%` : '--',
+                co2: sensores.co2 !== undefined ? String(sensores.co2) : '--',
+                // Lendo campos de características (assumindo estrutura do dashboard anterior)
+                tipo: amb.tipo || '',
+                area: amb.area || '',
+                capacidade: amb.capacidade || '',
+                andar: amb.andar || '',
               });
+            });
 
-              const ambientesNode = empresaNode.ambientes; 
-              if (ambientesNode) {
-                Object.keys(ambientesNode).forEach(ambKey => {
-                  const amb = ambientesNode[ambKey];
-                  const sensores = amb.sensores;
-                  const carac = amb.características;
-
-                  listaAmbientes.push({
-                    id: ambKey,
-                    nomeExibicao: ambKey.replace(/_/g, ' '),
-                    temperatura: sensores?.Temperatura !== undefined ? `${sensores.Temperatura}°` : '--',
-                    umidade: sensores?.Umidade !== undefined ? `${sensores.Umidade}%` : '--',
-                    co2: sensores?.CO2 !== undefined ? String(sensores.CO2) : '--',
-                    tipo: carac?.tipo || '',
-                    area: carac?.area || '',
-                    capacidade: carac?.capacidade || '',
-                    andar: carac?.andar || '',
-                  });
-                });
-              }
-            }
+            setAmbientes(lista);
           });
 
-          const iniciais = nomeEncontrado.split(' ').filter(n => n.length > 0).map(n => n[0]).join('').slice(0, 2).toUpperCase();
-          setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais: iniciais || "US" });
-          setAmbientes(listaAmbientes.filter(amb => amb.id !== 'Ambiente_1'));
+          // Cleanup do listener de ambientes
+          return () => unsubAmbientes();
         }
-      });
-    }
+      } catch (error) {
+        console.error("Erro ao buscar dados:", error);
+      }
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
   const handleSalvarAmbiente = async () => {
@@ -130,51 +163,62 @@ export default function AmbientesScreen() {
       return;
     }
 
+    if (!empresaId) {
+      Alert.alert("Erro", "ID da empresa não encontrado.");
+      return;
+    }
+
     setIsSaving(true);
     try {
-      const user = auth.currentUser;
-      const snap = await get(ref(database, 'empresas'));
-      let empresaKeyFound = "";
-      Object.keys(snap.val()).forEach(key => {
-        if (Object.values(snap.val()[key].usuarios || {}).some((u: any) => u.uid === user?.uid)) empresaKeyFound = key;
-      });
+      const novoId = formNome.trim().replace(/ /g, '_');
+      const ambientesRef = collection(db, "empresas", empresaId, "ambientes");
 
-      if (empresaKeyFound) {
-        const pathAmbientes = `empresas/${empresaKeyFound}/ambientes`;
+      if (isEditing && selectedAmbiente) {
+        // --- ATUALIZAR AMBIENTE ---
+        const ambRef = doc(ambientesRef, selectedAmbiente.id);
+        await updateDoc(ambRef, {
+          tipo: formTipo,
+          area: formArea || "0",
+          capacidade: formCapacidade || "0",
+          andar: formAndar
+        });
+        Alert.alert("Sucesso", "Ambiente atualizado!");
+      } else {
+        // --- CRIAR NOVO AMBIENTE ---
+        // Lógica de substituir Ambiente_1 se for o único
+        const snapshot = await getDocs(ambientesRef);
+        const docs = snapshot.docs;
         
-        if (isEditing && selectedAmbiente) {
-          const pathCarac = `${pathAmbientes}/${selectedAmbiente.id}/características`;
-          await update(ref(database, pathCarac), {
-            tipo: formTipo,
-            area: formArea || "0",
-            capacidade: formCapacidade || "0",
-            andar: formAndar
-          });
-          Alert.alert("Sucesso", "Ambiente atualizado!");
-        } else {
-          const novoId = formNome.trim().replace(/ /g, '_');
-          const payload = {
-            características: { tipo: formTipo, area: formArea || "0", capacidade: formCapacidade || "0", andar: formAndar },
-            perifericos: { ar_condicionado: { geral: { status: false, marca: "Genérico", capacidade: "" } } },
-            sensores: { Temperatura: 0, Umidade: 0, CO2: 0, distancia: 0, fogo: 0, gas: 0 }
-          };
-          
-          const ambSnap = await get(ref(database, pathAmbientes));
-          const chaves = Object.keys(ambSnap.val() || {});
-          if (chaves.length === 1 && chaves[0] === 'Ambiente_1') {
-            await set(ref(database, `${pathAmbientes}/${novoId}`), payload);
-            await remove(ref(database, `${pathAmbientes}/Ambiente_1`));
-          } else {
-            await set(ref(database, `${pathAmbientes}/${novoId}`), payload);
-          }
-          Alert.alert("Sucesso", "Ambiente criado!");
+        // Se só existe o 'Ambiente_1', deletamos ele antes
+        if (docs.length === 1 && docs[0].id === 'Ambiente_1') {
+          await deleteDoc(doc(ambientesRef, 'Ambiente_1'));
         }
-        
-        setIsAdding(false);
-        setIsEditing(false);
-        resetForm();
+
+        const novoAmbRef = doc(ambientesRef, novoId);
+        // Payload alinhado com a estrutura do Firestore (Dashboard)
+        const payload = {
+          tipo: formTipo,
+          area: formArea || "0",
+          capacidade: formCapacidade || "0",
+          andar: formAndar,
+          sensores: { 
+            temperatura: 0, 
+            umidade: 0, 
+            co2: 0 
+            // Adicione outros sensores se necessário
+          },
+          perifericos: {} // Inicia vazio ou com padrão
+        };
+
+        await setDoc(novoAmbRef, payload);
+        Alert.alert("Sucesso", "Ambiente criado!");
       }
+      
+      setIsAdding(false);
+      setIsEditing(false);
+      resetForm();
     } catch (e) {
+      console.error(e);
       Alert.alert("Erro", "Falha ao processar operação.");
     } finally {
       setIsSaving(false);
@@ -198,13 +242,12 @@ export default function AmbientesScreen() {
     Alert.alert("Excluir", "Deseja realmente excluir este ambiente?", [
       { text: "Cancelar", style: "cancel" },
       { text: "Excluir", style: "destructive", onPress: async () => {
-          const user = auth.currentUser;
-          const snap = await get(ref(database, 'empresas'));
-          let empId = "";
-          Object.keys(snap.val()).forEach(k => { 
-            if (Object.values(snap.val()[k].usuarios || {}).some((u: any) => u.uid === user?.uid)) empId = k; 
-          });
-          await remove(ref(database, `empresas/${empId}/ambientes/${id}`));
+        if(!empresaId) return;
+        try {
+          await deleteDoc(doc(db, "empresas", empresaId, "ambientes", id));
+        } catch (e) {
+          Alert.alert("Erro", "Falha ao excluir.");
+        }
       }}
     ]);
   };
@@ -266,7 +309,6 @@ export default function AmbientesScreen() {
                 type={item.tipo || "Monitorado"} 
                 temp={item.temperatura} hum={item.umidade} aqi={item.co2} 
                 icon={item.tipo?.includes('Escritório') ? <Building2 color="#0369A1" size={22}/> : <LayoutGrid color="#0369A1" size={22}/>} 
-                // LÓGICA DE NAVEGAÇÃO APLICADA AQUI:
                 onPress={() => router.push({
                   pathname: '/ambiente',
                   params: { id: item.id, nome: item.nomeExibicao, empresa: empresaId }

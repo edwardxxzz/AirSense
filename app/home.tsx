@@ -26,7 +26,7 @@ import { useRouter } from 'expo-router';
 
 // --- FIREBASE SERVICES ---
 import { auth, db } from '../services/firebaseConfig';
-import { signOut } from "firebase/auth";
+import { signOut, onAuthStateChanged } from "firebase/auth"; // Importação adicionada
 import { 
   doc, 
   onSnapshot, 
@@ -118,13 +118,21 @@ export default function DashboardScreen() {
     qualidadeAr: 0 
   });
 
+  // --- USE EFFECT CORRIGIDO ---
   useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
+    let unsubConfig: (() => void) | undefined;
+    let unsubAmbientes: (() => void) | undefined;
 
-    const loadData = async () => {
+    // 1. Ouvinte de Autenticação: Garante que o usuário está logado antes de buscar dados
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        // Se não há usuário, limpa os dados e pode redirecionar para login se necessário
+        setUserData({ nome: 'Desconhecido', email: '', iniciais: '..' });
+        return;
+      }
+
       try {
-        // 1. Encontrar a empresa do usuário logado
+        // 2. Encontrar a empresa do usuário logado
         const userQuery = query(collectionGroup(db, 'usuarios'), where('userId', '==', user.uid));
         const userSnapshot = await getDocs(userQuery);
 
@@ -136,13 +144,15 @@ export default function DashboardScreen() {
             setUserEmpresaId(empresaId);
             
             const dataUser = userDoc.data();
-            const nomeEncontrado = dataUser.userName || "Usuário";
+            // Tenta pegar userName ou nome (compatibilidade)
+            const nomeEncontrado = dataUser.userName || dataUser.nome || "Usuário";
             const iniciais = nomeEncontrado.split(' ').filter((n:string) => n.length > 0).map((n:string) => n[0]).join('').slice(0, 2).toUpperCase();
             
+            // ATUALIZA O ESTADO DO USUÁRIO AQUI
             setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais });
 
-            // 2. Ouvinte para as Médias Gerais
-            const unsubConfig = onSnapshot(doc(db, "empresas", empresaId, "config", "geral"), (docSnap) => {
+            // 3. Ouvinte para as Médias Gerais
+            unsubConfig = onSnapshot(doc(db, "empresas", empresaId, "config", "geral"), (docSnap) => {
               if (docSnap.exists()) {
                 const d = docSnap.data();
                 setMedias(prev => ({
@@ -154,14 +164,13 @@ export default function DashboardScreen() {
               }
             });
 
-            // 3. Ouvinte para Ambientes
-            const unsubAmbientes = onSnapshot(collection(db, "empresas", empresaId, "ambientes"), (querySnapshot) => {
+            // 4. Ouvinte para Ambientes
+            unsubAmbientes = onSnapshot(collection(db, "empresas", empresaId, "ambientes"), (querySnapshot) => {
               const lista: AmbienteData[] = [];
               const nomesParaSelect: string[] = [];
 
               querySnapshot.forEach((docAmb) => {
                 const amb = docAmb.data();
-                // Preservando seu filtro original de Ambiente_1
                 if (docAmb.id !== 'Ambiente_1') {
                   nomesParaSelect.push(docAmb.id.replace(/_/g, ' '));
                   lista.push({
@@ -186,20 +195,23 @@ export default function DashboardScreen() {
                 : 0;
               setMedias(prev => ({ ...prev, hum: hMedia }));
             });
-
-            return () => { unsubConfig(); unsubAmbientes(); };
           }
         }
       } catch (error) {
         console.error("Erro ao carregar Dashboard:", error);
       }
-    };
+    });
 
-    loadData();
+    // Cleanup: Remove todos os ouvintes ao desmontar
+    return () => {
+      unsubscribeAuth();
+      if (unsubConfig) unsubConfig();
+      if (unsubAmbientes) unsubAmbientes();
+    };
   }, [refreshKey]);
 
-  // --- LOGICA DE ATUALIZAÇÃO ---
-  // --- FUNÇÃO PARA ABRIR O MODAL DE EDIÇÃO ---
+  // --- FUNÇÕES DE MANIPULAÇÃO ---
+  
   const handleOpenEdit = (item: AmbienteData) => {
     setSelectedAmbiente(item);
     setFormNome(item.nomeExibicao);
@@ -208,8 +220,9 @@ export default function DashboardScreen() {
     setFormCapacidade(item.capacidade ? String(item.capacidade) : '');
     setFormAndar(item.andar || '');
     setIsEditing(true);
-    setMenuVisibleId(null); // Fecha o mini-menu ao abrir o modal
+    setMenuVisibleId(null); 
   };
+
   const handleUpdateAmbiente = async () => {
     if (!selectedAmbiente || !userEmpresaId) return;
     setIsSaving(true);

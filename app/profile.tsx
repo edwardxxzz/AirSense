@@ -17,10 +17,25 @@ import {
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router'; 
 
-// --- IMPORTAÇÕES FIREBASE ---
-import { updatePassword, deleteUser } from "firebase/auth";
-import { auth, database } from '../services/firebaseConfig';
-import { ref, get, set, remove } from "firebase/database";
+// --- IMPORTAÇÕES FIREBASE FIRESTORE ---
+import { 
+  updatePassword, 
+  deleteUser,
+  onAuthStateChanged 
+} from "firebase/auth";
+import { auth, db } from '../services/firebaseConfig';
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  deleteDoc, 
+  updateDoc,
+  collection, 
+  query, 
+  where, 
+  collectionGroup, 
+  getDocs 
+} from "firebase/firestore";
 
 const { width } = Dimensions.get('window');
 const LogoImg = require('../assets/images/logo.png'); 
@@ -32,7 +47,7 @@ export default function ProfileScreen() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [company, setCompany] = useState('');
+  const [company, setCompany] = useState(''); // ID da Empresa (ex: UFAM)
   const [location, setLocation] = useState('');
   
   // Estados de Senha
@@ -46,53 +61,63 @@ export default function ProfileScreen() {
   const [showConfirm, setShowConfirm] = useState(false);
 
   // Estados de Erro e Feedback
-  const [originalData, setOriginalData] = useState<any>(null);
+  // Armazena referências necessárias para atualização (caminho do documento)
+  const [originalData, setOriginalData] = useState<{ 
+    empresaId: string; 
+    userId: string; 
+    docId: string; 
+    senha?: string; 
+  } | null>(null);
+  
   const [companyError, setCompanyError] = useState(false);
   const [passError, setPassError] = useState(false);
   const [matchError, setMatchError] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
   useEffect(() => {
-    const loadUserData = async () => {
-      const user = auth.currentUser;
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (!user) return;
+
       try {
-        const snapshot = await get(ref(database, 'empresas'));
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          for (let compName in data) {
-            const users = data[compName].usuarios;
-            for (let userName in users) {
-              if (users[userName].uid === user.uid) {
-                const userData = users[userName];
-                setFullName(userName);
-                setEmail(userData.email || user.email);
-                setPhone(userData.telefone || '');
-                setCompany(compName);
-                setLocation(userData.localizacao || '');
-                setOriginalData({ compName, userName, ...userData });
-                break;
-              }
-            }
-          }
+        // 1. Busca o usuário em todas as subcoleções 'usuarios'
+        const userQuery = query(collectionGroup(db, 'usuarios'), where('userId', '==', user.uid));
+        const userSnapshot = await getDocs(userQuery);
+
+        if (!userSnapshot.empty) {
+          const userDoc = userSnapshot.docs[0];
+          const userData = userDoc.data();
+          
+          // O ID da empresa é o ID do documento pai da subcoleção 'usuarios'
+          const empresaId = userDoc.ref.parent.parent?.id || '';
+          const docId = userDoc.id; // ID do documento do usuário (geralmente o UID)
+
+          setFullName(userData.userName || 'Usuário');
+          setEmail(userData.email || user.email);
+          setPhone(userData.telefone || '');
+          setCompany(empresaId);
+          setLocation(userData.localizacao || '');
+          
+          setOriginalData({ 
+            empresaId, 
+            userId: user.uid, 
+            docId: docId,
+            senha: userData.senha // Guarda senha para validação local (se existir no DB)
+          });
         }
-      } catch (error) { console.error(error); }
-    };
-    loadUserData();
+      } catch (error) { 
+        console.error("Erro ao carregar perfil:", error); 
+      }
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
-  /**
-   * Lógica para capturar as iniciais do 1º e 2º nome.
-   * Ex: "Davi Juda" -> "DJ"
-   */
   const getInitials = (name: string) => {
     if (!name) return 'US';
-    const parts = name.trim().split(/\s+/); // Divide o nome por espaços
+    const parts = name.trim().split(/\s+/);
     if (parts.length >= 2) {
-      // Pega a primeira letra do primeiro nome e a primeira do segundo
       return (parts[0][0] + parts[1][0]).toUpperCase();
     }
-    // Caso tenha apenas um nome, pega as duas primeiras letras
     return parts[0].substring(0, 2).toUpperCase();
   };
 
@@ -100,45 +125,99 @@ export default function ProfileScreen() {
     const user = auth.currentUser;
     if (!user || !originalData) return;
     setCompanyError(false);
-    const safeCompany = company.trim().replace(/[.#$[\]]/g, "_");
-    const safeUser = fullName.trim().replace(/[.#$[\]]/g, "_");
+
+    const newCompanyId = company.trim(); // ID da nova empresa (ex: "UFAM", "NovaEmpresa")
+    const safeName = fullName.trim();
 
     try {
-      if (safeCompany !== originalData.compName) {
-        const companyCheck = await get(ref(database, `empresas/${safeCompany}`));
-        if (!companyCheck.exists()) { setCompanyError(true); return; }
-        await remove(ref(database, `empresas/${originalData.compName}/usuarios/${originalData.userName}`));
+      // Lógica de Mudança de Empresa
+      if (newCompanyId !== originalData.empresaId) {
+        // Verifica se a nova empresa existe
+        const newCompanyRef = doc(db, "empresas", newCompanyId);
+        const newCompanySnap = await getDoc(newCompanyRef);
+
+        if (!newCompanySnap.exists()) {
+          setCompanyError(true);
+          Alert.alert("Erro", "A empresa de destino não existe no sistema.");
+          return;
+        }
+
+        // Move o usuário: Cria na nova e deleta na antiga
+        const newUserRef = doc(db, "empresas", newCompanyId, "usuarios", originalData.docId);
+        const oldUserRef = doc(db, "empresas", originalData.empresaId, "usuarios", originalData.docId);
+
+        // Dados atualizados
+        const payload = {
+          userId: user.uid,
+          userName: safeName,
+          email: email.toLowerCase().trim(),
+          telefone: phone,
+          localizacao: location,
+          senha: originalData.senha || "", // Mantém senha existente
+          dataAtualizacao: new Date().toISOString()
+        };
+
+        await setDoc(newUserRef, payload);
+        await deleteDoc(oldUserRef);
+
+        Alert.alert("Sucesso", "Perfil e empresa atualizados!");
+        
+        // Atualiza estado original
+        setOriginalData(prev => prev ? { ...prev, empresaId: newCompanyId } : null);
+
+      } else {
+        // Apenas atualiza os dados na mesma empresa
+        const userRef = doc(db, "empresas", originalData.empresaId, "usuarios", originalData.docId);
+        await updateDoc(userRef, {
+          userName: safeName,
+          email: email.toLowerCase().trim(),
+          telefone: phone,
+          localizacao: location,
+          dataAtualizacao: new Date().toISOString()
+        });
+        Alert.alert("Sucesso", "Perfil atualizado!");
       }
-      await set(ref(database, `empresas/${safeCompany}/usuarios/${safeUser}`), {
-        ...originalData,
-        email: email.toLowerCase().trim(),
-        telefone: phone,
-        localizacao: location,
-        dataAtualizacao: new Date().toISOString()
-      });
-      Alert.alert("Sucesso", "Perfil atualizado!");
-      setOriginalData({ ...originalData, compName: safeCompany, userName: safeUser });
-    } catch (error) { Alert.alert("Erro", "Falha ao salvar."); }
+
+    } catch (error) { 
+      console.error(error);
+      Alert.alert("Erro", "Falha ao salvar."); 
+    }
   };
 
   const handleUpdatePassword = async () => {
     const user = auth.currentUser;
     if (!user || !originalData) return;
+    
     setPassError(false);
     setMatchError(false);
-    if (currentPass !== originalData.senha) { setPassError(true); return; }
-    if (newPass !== confirmNewPass || newPass === '') { setMatchError(true); return; }
+
+    // Verificação da senha atual (comparação local conforme lógica original)
+    // Nota: O ideal é usar reauthenticateWithCredential, mas mantive a lógica do seu código
+    if (currentPass !== originalData.senha) { 
+      setPassError(true); 
+      return; 
+    }
+    
+    if (newPass !== confirmNewPass || newPass === '') { 
+      setMatchError(true); 
+      return; 
+    }
 
     try {
       await updatePassword(user, newPass);
-      const userRef = ref(database, `empresas/${originalData.compName}/usuarios/${originalData.userName}/senha`);
-      await set(userRef, newPass);
-      setOriginalData({ ...originalData, senha: newPass });
+      
+      // Atualiza a senha no Firestore para manter a referência local (se necessário)
+      const userRef = doc(db, "empresas", originalData.empresaId, "usuarios", originalData.docId);
+      await updateDoc(userRef, { senha: newPass });
+
+      // Atualiza estado local
+      setOriginalData(prev => prev ? { ...prev, senha: newPass } : null);
+      
       setSuccessMsg('Senha alterada com sucesso!');
       setCurrentPass(''); setNewPass(''); setConfirmNewPass('');
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (error: any) {
-      Alert.alert("Erro", "Não foi possível atualizar a senha.");
+      Alert.alert("Erro", "Não foi possível atualizar a senha. Tente relgar.");
     }
   };
 
@@ -149,10 +228,14 @@ export default function ProfileScreen() {
           const user = auth.currentUser;
           if (user && originalData) {
             try {
-              await remove(ref(database, `empresas/${originalData.compName}/usuarios/${originalData.userName}`));
+              // Deleta do Firestore
+              await deleteDoc(doc(db, "empresas", originalData.empresaId, "usuarios", originalData.docId));
+              // Deleta a autenticação
               await deleteUser(user);
               router.replace('/');
-            } catch (e) { Alert.alert("Erro", "Relogue para excluir por segurança."); }
+            } catch (e) { 
+              Alert.alert("Erro", "Relogue para excluir por segurança."); 
+            }
           }
         }}
     ]);
@@ -199,7 +282,7 @@ export default function ProfileScreen() {
           <InputLabel label="Nome completo" icon={<User size={20} />} value={fullName} onChangeText={setFullName} placeholder="Usuário" />
           <InputLabel label="Email" icon={<Mail size={20} />} value={email} onChangeText={setEmail} placeholder="usuario@email.com" />
           <InputLabel label="Telefone" icon={<Phone size={20} />} value={phone} onChangeText={setPhone} placeholder="(92) 99999-9999" />
-          <InputLabel label="Empresa" icon={<Briefcase size={20} />} value={company} onChangeText={(t:any)=>{setCompany(t); setCompanyError(false)}} error={companyError} placeholder="Empresa" />
+          <InputLabel label="Empresa (ID)" icon={<Briefcase size={20} />} value={company} onChangeText={(t:any)=>{setCompany(t); setCompanyError(false)}} error={companyError} placeholder="Ex: UFAM" />
           <InputLabel label="Localização" icon={<MapPin size={20} />} value={location} onChangeText={setLocation} placeholder="Localização" />
 
           <TouchableOpacity style={styles.btnSave} onPress={handleSave}>

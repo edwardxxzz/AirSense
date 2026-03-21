@@ -10,7 +10,7 @@ import {
   Image,
   Modal,
   Pressable,
-  Switch,
+  Switch, // Importante para o design original
   Alert,
   ActivityIndicator,
   TextInput,
@@ -23,10 +23,13 @@ import {
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router'; 
 
-// --- FIREBASE ---
-import { auth, database } from '../services/firebaseConfig';
-import { ref, onValue, update, get, set, remove } from "firebase/database";
-import { signOut } from "firebase/auth";
+// --- FIREBASE FIRESTORE MIGRATION ---
+import { auth, db } from '../services/firebaseConfig';
+import { signOut, onAuthStateChanged } from "firebase/auth";
+import { 
+  collection, doc, onSnapshot, getDocs, setDoc, updateDoc, deleteDoc, 
+  query, where, collectionGroup 
+} from "firebase/firestore";
 
 const { width } = Dimensions.get('window');
 const LogoImg = require('../assets/images/logo.png'); 
@@ -39,120 +42,139 @@ interface PerifericoData {
   marca: string;
   capacidade?: string;
   status: boolean;
-  dbPath: string;
   ambienteId: string;
 }
 
 export default function PerifericosScreen() {
   const router = useRouter();
+  
+  // Estados de UI
   const [isProfileVisible, setIsProfileVisible] = useState(false);
   const [isAdding, setIsAdding] = useState(false); 
   const [isEditing, setIsEditing] = useState(false);
   const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
   
+  // Estados de Dados
   const [perifericos, setPerifericos] = useState<PerifericoData[]>([]);
+  const [empresaId, setEmpresaId] = useState<string>('');
   const [selectedPerif, setSelectedPerif] = useState<PerifericoData | null>(null);
   const [userData, setUserData] = useState({ nome: 'Carregando...', email: '', iniciais: '..' });
 
-  const [ambientesDisponiveis, setAmbientesDisponiveis] = useState<string[]>([]);
+  // Formulário
+  const [ambientesDisponiveis, setAmbientesDisponiveis] = useState<{id: string, nome: string}[]>([]);
   const [showAmbienteModal, setShowAmbienteModal] = useState(false);
   const [formNome, setFormNome] = useState('');
-  const [formAmbiente, setFormAmbiente] = useState('');
+  const [formAmbiente, setFormAmbiente] = useState(''); // Nome exibição
+  const [formAmbienteId, setFormAmbienteId] = useState(''); // ID documento
   const [formTipo, setFormTipo] = useState('');
   const [formMarca, setFormMarca] = useState('');
   const [formCapacidade, setFormCapacidade] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    const user = auth.currentUser;
-    if (user) {
-      const empresasRef = ref(database, 'empresas');
-      onValue(empresasRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          let nomeEncontrado = user.displayName || "Usuário";
-          let listaPerifericos: PerifericoData[] = [];
-          let listaAmbientes: string[] = [];
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+
+      try {
+        // 1. Descobrir Empresa
+        const userQuery = query(collectionGroup(db, 'usuarios'), where('userId', '==', user.uid));
+        const userSnapshot = await getDocs(userQuery);
+
+        if (!userSnapshot.empty) {
+          const userDoc = userSnapshot.docs[0];
+          const foundEmpresaId = userDoc.ref.parent.parent?.id || '';
           
-          Object.keys(data).forEach(empresaKey => {
-            const empresaNode = data[empresaKey];
-            const usuarios = empresaNode.usuarios;
+          if (foundEmpresaId) {
+            setEmpresaId(foundEmpresaId);
 
-            if (usuarios && Object.values(usuarios).some((u: any) => u.uid === user.uid)) {
-              Object.keys(usuarios).forEach(uk => {
-                if (usuarios[uk].uid === user.uid) nomeEncontrado = uk.replace(/_/g, ' ');
-              });
+            // Dados do usuário
+            const dataUser = userDoc.data();
+            const nomeEncontrado = dataUser.userName || "Usuário";
+            const iniciais = nomeEncontrado.split(' ').filter((n: string) => n.length > 0).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+            setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais });
 
-              const ambientesNode = empresaNode.ambientes;
-              if (ambientesNode) {
-                Object.keys(ambientesNode).forEach(ambKey => {
-                  if (ambKey !== 'Ambiente_1') listaAmbientes.push(ambKey.replace(/_/g, ' '));
-
-                  const perifericosNode = ambientesNode[ambKey].perifericos;
-                  if (perifericosNode) {
-                    Object.keys(perifericosNode).forEach(tipoKey => {
-                      const modelos = perifericosNode[tipoKey];
-                      Object.keys(modelos).forEach(modKey => {
-                        if (modKey === 'geral') return;
-                        const item = modelos[modKey];
-                        listaPerifericos.push({
-                          id: `${ambKey}_${tipoKey}_${modKey}`,
-                          nome: modKey.replace(/_/g, ' '),
-                          tipo: tipoKey.replace(/_/g, ' '),
-                          localizacao: ambKey.replace(/_/g, ' '),
-                          marca: item.marca || "Genérico",
-                          capacidade: item.capacidade || "",
-                          status: !!item.status,
-                          dbPath: `empresas/${empresaKey}/ambientes/${ambKey}/perifericos/${tipoKey}/${modKey}`,
-                          ambienteId: ambKey
-                        });
-                      });
-                    });
-                  }
-                });
-              }
-            }
-          });
-
-          const iniciais = nomeEncontrado.split(' ').filter(n => n.length > 0).map(n => n[0]).join('').slice(0, 2).toUpperCase();
-          setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais });
-          setAmbientesDisponiveis(listaAmbientes);
-          setPerifericos(listaPerifericos);
+            // 2. Carregar Ambientes e Periféricos
+            carregarDados(foundEmpresaId);
+          }
         }
-      });
-    }
+      } catch (error) {
+        console.error("Erro auth:", error);
+      }
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
+  const carregarDados = async (empId: string) => {
+    try {
+      const ambientesRef = collection(db, "empresas", empId, "ambientes");
+      const ambientesSnap = await getDocs(ambientesRef);
+      
+      const listaAmbientes: {id: string, nome: string}[] = [];
+      const listaPerifericos: PerifericoData[] = [];
+
+      // Itera sobre ambientes
+      const promises = ambientesSnap.docs.map(async (docAmb) => {
+        const ambId = docAmb.id;
+        const ambNome = docAmb.id.replace(/_/g, ' ');
+        
+        // Adiciona à lista de disponíveis (exceto Ambiente_1)
+        if (ambId !== 'Ambiente_1') {
+          listaAmbientes.push({ id: ambId, nome: ambNome });
+        }
+
+        // Busca periféricos
+        const perRef = collection(db, "empresas", empId, "ambientes", ambId, "perifericos");
+        const perSnap = await getDocs(perRef);
+        
+        perSnap.forEach((docPer) => {
+          const data = docPer.data();
+          listaPerifericos.push({
+            id: docPer.id,
+            nome: docPer.id.replace(/_/g, ' '),
+            tipo: data.tipo || 'Outro',
+            localizacao: ambNome,
+            marca: data.marca || "Genérico",
+            capacidade: data.capacidade || "",
+            status: data.status || false,
+            ambienteId: ambId
+          });
+        });
+      });
+
+      await Promise.all(promises);
+      
+      setAmbientesDisponiveis(listaAmbientes);
+      setPerifericos(listaPerifericos);
+    } catch (error) {
+      console.error("Erro ao carregar:", error);
+    }
+  };
+
   const handleSalvarPeriferico = async () => {
-    if (!formAmbiente || !formNome || !formTipo) {
+    if (!formNome || !formTipo || !formAmbienteId || !empresaId) {
       Alert.alert("Atenção", "Preencha todos os campos obrigatórios (*)");
       return;
     }
 
     setIsSaving(true);
     try {
+      const perId = formNome.replace(/ /g, '_').toLowerCase();
+      const perRef = doc(db, "empresas", empresaId, "ambientes", formAmbienteId, "perifericos", perId);
+      
       if (isEditing && selectedPerif) {
-        // LÓGICA DE EDIÇÃO
-        await update(ref(database, selectedPerif.dbPath), {
+        // Atualizar
+        await updateDoc(perRef, {
+          tipo: formTipo,
           marca: formMarca || "Genérico",
           capacidade: formCapacidade || ""
+          // Status não muda aqui
         });
         Alert.alert("Sucesso", "Periférico atualizado!");
       } else {
-        // LÓGICA DE CRIAÇÃO
-        const user = auth.currentUser;
-        const snap = await get(ref(database, 'empresas'));
-        let empId = "";
-        Object.keys(snap.val()).forEach(k => {
-            if (Object.values(snap.val()[k].usuarios || {}).some((u: any) => u.uid === user?.uid)) empId = k;
-        });
-
-        const ambKey = formAmbiente.replace(/ /g, '_');
-        const tipoKey = formTipo.toLowerCase().includes('ar') ? 'ar_condicionado' : formTipo.replace(/ /g, '_').toLowerCase();
-        const dispositivoKey = formNome.replace(/ /g, '_').toLowerCase();
-        const pathBase = `empresas/${empId}/ambientes/${ambKey}/perifericos/${tipoKey}`;
-
-        await set(ref(database, `${pathBase}/${dispositivoKey}`), {
+        // Criar
+        await setDoc(perRef, {
+          tipo: formTipo,
           marca: formMarca || "Genérico",
           capacidade: formCapacidade || "",
           status: false
@@ -162,7 +184,9 @@ export default function PerifericosScreen() {
 
       setIsAdding(false);
       resetForm();
+      carregarDados(empresaId); // Recarrega lista
     } catch (error) {
+      console.error(error);
       Alert.alert("Erro", "Falha na operação.");
     } finally {
       setIsSaving(false);
@@ -173,6 +197,7 @@ export default function PerifericosScreen() {
     setSelectedPerif(item);
     setFormNome(item.nome);
     setFormAmbiente(item.localizacao);
+    setFormAmbienteId(item.ambienteId);
     setFormTipo(item.tipo);
     setFormMarca(item.marca);
     setFormCapacidade(item.capacidade || '');
@@ -186,13 +211,19 @@ export default function PerifericosScreen() {
     Alert.alert("Excluir", `Deseja remover ${item.nome}?`, [
       { text: "Cancelar", style: "cancel" },
       { text: "Excluir", style: "destructive", onPress: async () => {
-          await remove(ref(database, item.dbPath));
+        if(!empresaId) return;
+        try {
+          await deleteDoc(doc(db, "empresas", empresaId, "ambientes", item.ambienteId, "perifericos", item.id));
+          carregarDados(empresaId);
+        } catch (e) {
+          Alert.alert("Erro", "Falha ao excluir.");
+        }
       }}
     ]);
   };
 
   const resetForm = () => {
-    setFormNome(''); setFormAmbiente(''); setFormTipo(''); setFormMarca(''); setFormCapacidade('');
+    setFormNome(''); setFormAmbiente(''); setFormAmbienteId(''); setFormTipo(''); setFormMarca(''); setFormCapacidade('');
     setSelectedPerif(null);
     setIsEditing(false);
   };
@@ -222,6 +253,7 @@ export default function PerifericosScreen() {
           <Text style={styles.headerSubtitle}>Controle seus dispositivos conectados</Text>
         </View>
 
+        {/* BOTÃO NOVO PADRÃO ANTIGO */}
         <TouchableOpacity style={styles.btnNewItem} onPress={() => { resetForm(); setIsAdding(true); }}>
           <Plus color="#FFF" size={20} />
           <Text style={styles.btnNewItemText}>Novo Periférico</Text>
@@ -229,16 +261,19 @@ export default function PerifericosScreen() {
 
         {perifericos.length > 0 ? (
           perifericos.map((p) => (
-            <View key={p.id} style={{ zIndex: menuVisibleId === p.id ? 100 : 1 }}>
+            <View key={`${p.ambienteId}-${p.id}`} style={{ zIndex: menuVisibleId === p.id ? 100 : 1 }}>
                 <PeripheralCard 
                     title={p.nome}
                     subtitle={p.tipo}
                     location={p.localizacao}
                     brand={p.marca}
                     status={p.status}
-                    dbPath={p.dbPath}
+                    // Passando IDs para o card poder atualizar o Firestore
+                    empresaId={empresaId}
+                    ambienteId={p.ambienteId}
+                    perifericoId={p.id}
                     icon={p.tipo.toLowerCase().includes('ar') ? <Snowflake color="#06B6D4" size={24}/> : <Sun color="#06B6D4" size={24}/>}
-                    onPress={() => router.push('/ambiente')}
+                    onPress={() => router.push('/periferico')}
                     onMore={() => setMenuVisibleId(menuVisibleId === p.id ? null : p.id)}
                 />
                 {menuVisibleId === p.id && (
@@ -261,7 +296,7 @@ export default function PerifericosScreen() {
         <View style={{height: 100}} /> 
       </ScrollView>
 
-      {/* MODAL DO FORMULÁRIO (NOVO / EDITAR) */}
+      {/* MODAL DO FORMULÁRIO (Design mantido) */}
       <Modal visible={isAdding} transparent animationType="fade">
         <View style={styles.formOverlay}>
           <View style={styles.formCard}>
@@ -322,11 +357,11 @@ export default function PerifericosScreen() {
             </View>
             <FlatList
               data={ambientesDisponiveis}
-              keyExtractor={(item) => item}
+              keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
-                <TouchableOpacity style={styles.pickerItem} onPress={() => { setFormAmbiente(item); setShowAmbienteModal(false); }}>
-                  <Text style={[styles.pickerText, formAmbiente === item && {color: '#2563EB', fontWeight: 'bold'}]}>{item}</Text>
-                  {formAmbiente === item && <Zap color="#2563EB" size={20} />}
+                <TouchableOpacity style={styles.pickerItem} onPress={() => { setFormAmbiente(item.nome); setFormAmbienteId(item.id); setShowAmbienteModal(false); }}>
+                  <Text style={[styles.pickerText, formAmbiente === item.nome && {color: '#2563EB', fontWeight: 'bold'}]}>{item.nome}</Text>
+                  {formAmbiente === item.nome && <Zap color="#2563EB" size={20} />}
                 </TouchableOpacity>
               )}
             />
@@ -334,7 +369,7 @@ export default function PerifericosScreen() {
         </View>
       </Modal>
 
-      {/* MODAL PERFIL */}
+      {/* MODAL PERFIL (Padrão) */}
       <Modal animationType="fade" transparent={true} visible={isProfileVisible} onRequestClose={() => setIsProfileVisible(false)}>
         <View style={styles.modalOverlay}>
           <Pressable style={styles.modalBackdrop} onPress={() => setIsProfileVisible(false)} />
@@ -366,7 +401,7 @@ export default function PerifericosScreen() {
       <View style={styles.bottomTab}>
         <TabItem icon={<FileText size={24} color="#64748B" />} onPress={() => router.push('/home')} />
         <TabItem icon={<Building2 size={24} color="#64748B" />} onPress={() => router.push('/ambientes')} />
-        <TabItem icon={<Zap size={24} color="#2563EB" />} active />
+        <TabItem icon={<Zap size={24} color="#2563EB" />} active onPress={() => router.push('/perifericos')} />
         <TabItem icon={<Bell size={24} color="#64748B" />} onPress={() => router.push('/notificacao')} />
         <TabItem icon={<BarChart3 size={24} color="#64748B" />} onPress={() => router.push('/relatorios')} />
       </View>
@@ -374,20 +409,25 @@ export default function PerifericosScreen() {
   );
 }
 
-function PeripheralCard({ title, subtitle, location, brand, icon, status, dbPath, onPress, onMore }: any) {
+// --- COMPONENTE DO CARD (Design Antigo Restaurado) ---
+function PeripheralCard({ title, subtitle, location, brand, icon, status, empresaId, ambienteId, perifericoId, onPress, onMore }: any) {
   const [loading, setLoading] = useState(false);
+
   const toggleSwitch = async () => {
-    if (loading) return;
+    if (loading || !empresaId) return;
     setLoading(true);
-    setTimeout(async () => {
-      try {
-        await update(ref(database, dbPath), { status: !status });
-      } catch (error) {
-        Alert.alert("Erro", "Falha ao atualizar.");
-      } finally {
-        setLoading(false);
-      }
-    }, 1500);
+    
+    // Otimista: Atualiza visual imediatamente (opcional, mas bom para UX)
+    // Aqui vamos direto no Firestore para garantir consistência com o estado 'status' que vem das props
+    
+    try {
+      const perRef = doc(db, "empresas", empresaId, "ambientes", ambienteId, "perifericos", perifericoId);
+      await updateDoc(perRef, { status: !status });
+    } catch (error) {
+      Alert.alert("Erro", "Falha ao atualizar status.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -411,7 +451,13 @@ function PeripheralCard({ title, subtitle, location, brand, icon, status, dbPath
         </View>
         <View style={styles.switchRow}>
           <Text style={[styles.statusText, {color: status ? '#2563EB' : '#94A3B8'}]}>{status ? 'Ligado' : 'Desligado'}</Text>
-          <Switch trackColor={{ false: "#E2E8F0", true: "#DBEAFE" }} thumbColor={status ? "#2563EB" : "#94A3B8"} onValueChange={toggleSwitch} value={status} disabled={loading} />
+          <Switch 
+            trackColor={{ false: "#E2E8F0", true: "#DBEAFE" }} 
+            thumbColor={status ? "#2563EB" : "#94A3B8"} 
+            onValueChange={toggleSwitch} 
+            value={status} 
+            disabled={loading} 
+          />
         </View>
       </View>
     </Pressable>
@@ -427,10 +473,11 @@ function TabItem({ icon, active, onPress }: any) {
   );
 }
 
+// --- ESTILOS (Design Antigo Restaurado) ---
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   topAppBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 5, backgroundColor: '#FFF' },
-  topLogo: { width: 140, height: 90 },
+  topLogo: { width: 140, height: 60 },
   headerIcons: { flexDirection: 'row', alignItems: 'center', gap: 15 },
   iconBadge: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   avatarCircle: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center' },
@@ -439,9 +486,12 @@ const styles = StyleSheet.create({
   headerSection: { marginBottom: 20 },
   headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#000' },
   headerSubtitle: { fontSize: 14, color: '#64748B' },
+  
+  // Botão Novo Item (Estilo Antigo)
   btnNewItem: { backgroundColor: '#2563EB', height: 48, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 25 },
   btnNewItemText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
   
+  // Card (Estilo Antigo)
   peripheralCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 18, marginBottom: 16, borderWidth: 1, borderColor: '#F1F5F9', elevation: 2 },
   peripheralHeader: { marginBottom: 15 },
   peripheralInfoMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -460,13 +510,14 @@ const styles = StyleSheet.create({
   menuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 },
   menuText: { fontSize: 14, fontWeight: '500', color: '#475569' },
 
+  // Formulários (Estilo Antigo)
   formOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: 20 },
   formCard: { backgroundColor: '#FFF', borderRadius: 25, padding: 25 },
   formTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', color: '#000', marginBottom: 5 },
   formSubtitle: { fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 25 },
   label: { fontSize: 14, fontWeight: '700', color: '#1E293B', marginBottom: 8 },
   inputBox: { height: 55, borderWidth: 1.5, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
-  input: { flex: 1, height: '90%', fontSize: 15, color: '#000', outlineWidth:0, outlineColor:"transparent" },
+  input: { flex: 1, height: '90%', fontSize: 15, color: '#000' },
   inputText: { fontSize: 15 },
   row: { flexDirection: 'row' },
   formButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 },

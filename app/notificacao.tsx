@@ -27,10 +27,16 @@ import {
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router'; 
 
-// --- INCLUSÃO FIREBASE ---
-import { auth, database } from '../services/firebaseConfig';
-import { ref, onValue } from "firebase/database";
-import { signOut } from "firebase/auth";
+// --- FIREBASE FIRESTORE MIGRATION ---
+import { auth, db } from '../services/firebaseConfig';
+import { signOut, onAuthStateChanged } from "firebase/auth";
+import { 
+  collection, 
+  query, 
+  where, 
+  collectionGroup, 
+  getDocs 
+} from "firebase/firestore";
 
 const LogoImg = require('../assets/images/logo.png'); 
 
@@ -46,32 +52,31 @@ export default function NotificacaoScreen() {
     iniciais: '..' 
   });
 
-  // --- LÓGICA DE BUSCA DE DADOS ---
+  // --- LÓGICA DE BUSCA DE DADOS (FIRESTORE) ---
   useEffect(() => {
-    const user = auth.currentUser;
-    if (user) {
-      const empresasRef = ref(database, 'empresas');
-      
-      onValue(empresasRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          let nomeEncontrado = user.displayName || "Usuário";
-          
-          Object.keys(data).forEach(empresaKey => {
-            const usuarios = data[empresaKey].usuarios;
-            if (usuarios) {
-              Object.keys(usuarios).forEach(userKey => {
-                if (usuarios[userKey].uid === user.uid) {
-                  nomeEncontrado = userKey.replace(/_/g, ' ');
-                }
-              });
-            }
-          });
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setUserData({ nome: 'Desconhecido', email: '', iniciais: '..' });
+        return;
+      }
 
+      try {
+        // 1. Buscar o documento do usuário na subcoleção 'usuarios' de qualquer empresa
+        const userQuery = query(collectionGroup(db, 'usuarios'), where('userId', '==', user.uid));
+        const userSnapshot = await getDocs(userQuery);
+
+        if (!userSnapshot.empty) {
+          const userDoc = userSnapshot.docs[0];
+          const dataUser = userDoc.data();
+          
+          // 2. Pegar o nome (campo userName conforme padrão do Firestore)
+          const nomeEncontrado = dataUser.userName || "Usuário";
+          
+          // 3. Calcular iniciais
           const iniciais = nomeEncontrado
             .split(' ')
-            .filter(n => n.length > 0)
-            .map(n => n[0])
+            .filter((n: string) => n.length > 0)
+            .map((n: string) => n[0])
             .join('')
             .slice(0, 2)
             .toUpperCase();
@@ -82,8 +87,12 @@ export default function NotificacaoScreen() {
             iniciais: iniciais || "US"
           });
         }
-      });
-    }
+      } catch (error) {
+        console.error("Erro ao buscar dados do usuário:", error);
+      }
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
   const handleLogout = async () => {
@@ -210,7 +219,7 @@ export default function NotificacaoScreen() {
         <TabItem icon={<FileText size={24} color="#64748B" />} onPress={() => router.push('/home')} />
         <TabItem icon={<Building2 size={24} color="#64748B" />} onPress={() => router.push('/ambientes')} />
         <TabItem icon={<Zap size={24} color="#64748B" />} onPress={() => router.push('/perifericos')} />
-        <TabItem icon={<Bell size={24} color="#2563EB" />} active />
+        <TabItem icon={<Bell size={24} color="#2563EB" />} active onPress={() => router.push('/notificacao')} />
         <TabItem icon={<BarChart3 size={24} color="#64748B" />} onPress={() => router.push('/relatorios')} />
       </View>
     </SafeAreaView>

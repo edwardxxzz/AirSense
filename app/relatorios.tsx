@@ -30,12 +30,18 @@ import {
 } from 'lucide-react-native';
 import { LineChart } from "react-native-chart-kit";
 import { useRouter } from 'expo-router'; 
-import Svg, { Circle } from 'react-native-svg'; // --- IMPORT DO SVG ---
+import Svg, { Circle } from 'react-native-svg';
 
-// --- INCLUSÃO FIREBASE ---
-import { auth, database } from '../services/firebaseConfig';
-import { ref, onValue } from "firebase/database";
-import { signOut } from "firebase/auth";
+// --- FIREBASE FIRESTORE MIGRATION ---
+import { auth, db } from '../services/firebaseConfig';
+import { signOut, onAuthStateChanged } from "firebase/auth";
+import { 
+  collection, 
+  query, 
+  where, 
+  collectionGroup, 
+  getDocs 
+} from "firebase/firestore";
 
 const { width } = Dimensions.get('window');
 const LogoImg = require('../assets/images/logo.png'); 
@@ -44,7 +50,7 @@ export default function RelatoriosScreen() {
   const router = useRouter();
   const [isProfileVisible, setIsProfileVisible] = useState(false);
   
-  // Lógica de Índice (Pode ser alterado dinamicamente depois)
+  // Lógica do Gauge 
   const indiceConforto = 70; 
   const radius = 55;
   const circumference = 2 * Math.PI * radius;
@@ -57,28 +63,43 @@ export default function RelatoriosScreen() {
   });
 
   useEffect(() => {
-    const user = auth.currentUser;
-    if (user) {
-      const empresasRef = ref(database, 'empresas');
-      onValue(empresasRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          let nomeEncontrado = user.displayName || "Usuário";
-          Object.keys(data).forEach(empresaKey => {
-            const usuarios = data[empresaKey].usuarios;
-            if (usuarios) {
-              Object.keys(usuarios).forEach(userKey => {
-                if (usuarios[userKey].uid === user.uid) {
-                  nomeEncontrado = userKey.replace(/_/g, ' ');
-                }
-              });
-            }
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setUserData({ nome: 'Desconhecido', email: '', iniciais: '..' });
+        return;
+      }
+
+      try {
+        // 1. Busca o documento do usuário em qualquer subcoleção 'usuarios'
+        const userQuery = query(collectionGroup(db, 'usuarios'), where('userId', '==', user.uid));
+        const userSnapshot = await getDocs(userQuery);
+
+        if (!userSnapshot.empty) {
+          const userDoc = userSnapshot.docs[0];
+          const dataUser = userDoc.data();
+          
+          // 2. Define os dados (usando o campo 'userName' padrão do Firestore)
+          const nomeEncontrado = dataUser.userName || "Usuário";
+          const iniciais = nomeEncontrado
+            .split(' ')
+            .filter((n: string) => n.length > 0)
+            .map((n: string) => n[0])
+            .join('')
+            .slice(0, 2)
+            .toUpperCase();
+
+          setUserData({
+            nome: nomeEncontrado,
+            email: user.email || "",
+            iniciais: iniciais || "US"
           });
-          const iniciais = nomeEncontrado.split(' ').filter(n => n.length > 0).map(n => n[0]).join('').slice(0, 2).toUpperCase();
-          setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais: iniciais || "US" });
         }
-      });
-    }
+      } catch (error) {
+        console.error("Erro ao buscar dados do usuário:", error);
+      }
+    });
+
+    return () => unsubscribeAuth();
   }, []);
 
   const handleLogout = async () => {
@@ -125,26 +146,15 @@ export default function RelatoriosScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* --- CARD: ÍNDICE DE CONFORTO (SVG ATUALIZADO) --- */}
+        {/* --- CARD: ÍNDICE DE CONFORTO --- */}
         <View style={styles.cardMain}>
           <Text style={styles.cardTitle}>Índice de Conforto</Text>
           
           <View style={styles.gaugeContainer}>
             <Svg width="140" height="140" viewBox="0 0 140 140">
-              {/* Círculo de Fundo (Trilho Cinza) */}
+              <Circle cx="70" cy="70" r={radius} stroke="#F1F5F9" strokeWidth="12" fill="none" />
               <Circle
-                cx="70"
-                cy="70"
-                r={radius}
-                stroke="#F1F5F9"
-                strokeWidth="12"
-                fill="none"
-              />
-              {/* Círculo de Progresso (Verde) */}
-              <Circle
-                cx="70"
-                cy="70"
-                r={radius}
+                cx="70" cy="70" r={radius}
                 stroke="#10B981"
                 strokeWidth="12"
                 fill="none"
@@ -163,7 +173,7 @@ export default function RelatoriosScreen() {
           <Text style={styles.statusDetail}>Baseado em temperatura, umidade, CO₂ e qualidade do ar</Text>
         </View>
 
-        {/* --- RESTANTE DOS CARDS --- */}
+        {/* --- RESUMO DO PERÍODO --- */}
         <View style={styles.cardMain}>
           <Text style={styles.cardTitle}>Resumo do Período</Text>
           <View style={styles.metricsGrid}>
@@ -174,6 +184,7 @@ export default function RelatoriosScreen() {
           </View>
         </View>
 
+        {/* --- GRÁFICO --- */}
         <View style={styles.cardMain}>
           <Text style={styles.cardTitle}>Histórico de Temperatura e Umidade</Text>
           <LineChart
@@ -233,13 +244,13 @@ export default function RelatoriosScreen() {
         <TabItem icon={<Building2 size={24} color="#64748B" />} onPress={() => router.push('/ambientes')} />
         <TabItem icon={<Zap size={24} color="#64748B" />} onPress={() => router.push('/perifericos')} />
         <TabItem icon={<Bell size={24} color="#64748B" />} onPress={() => router.push('/notificacao')} />
-        <TabItem icon={<BarChart3 size={24} color="#2563EB" />} active />
+        <TabItem icon={<BarChart3 size={24} color="#2563EB" />} active onPress={() => router.push('/relatorios')} />
       </View>
     </SafeAreaView>
   );
 }
 
-// --- AUXILIARES ---
+// --- COMPONENTES AUXILIARES ---
 function SummaryCard({ label, sub, icon, bgColor }: any) {
   return (
     <View style={[styles.summaryCard, { backgroundColor: bgColor }]}>
