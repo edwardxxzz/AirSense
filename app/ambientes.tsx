@@ -23,21 +23,10 @@ import { useRouter } from 'expo-router';
 
 // --- FIREBASE FIRESTORE MIGRATION ---
 import { auth, db } from '../services/firebaseConfig';
+import { signOut, onAuthStateChanged } from "firebase/auth";
 import { 
-  signOut, 
-  onAuthStateChanged 
-} from "firebase/auth";
-import { 
-  collection, 
-  doc, 
-  onSnapshot, 
-  getDocs, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
-  collectionGroup 
+  collection, doc, onSnapshot, getDocs, setDoc, updateDoc, 
+  deleteDoc, query, where, collectionGroup 
 } from "firebase/firestore";
 
 const { width } = Dimensions.get('window');
@@ -86,7 +75,6 @@ export default function AmbientesScreen() {
   const [formAndar, setFormAndar] = useState('');
 
   useEffect(() => {
-    // Listener de autenticação para garantir que temos o user UID
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         setUserData({ nome: 'Desconhecido', email: '', iniciais: '..' });
@@ -94,7 +82,6 @@ export default function AmbientesScreen() {
       }
 
       try {
-        // 1. Encontrar a empresa do usuário (via Collection Group)
         const userQuery = query(collectionGroup(db, 'usuarios'), where('userId', '==', user.uid));
         const userSnapshot = await getDocs(userQuery);
 
@@ -109,13 +96,11 @@ export default function AmbientesScreen() {
         if (foundEmpresaId) {
           setEmpresaId(foundEmpresaId);
 
-          // Dados do usuário para o perfil
           const dataUser = userDoc.data();
           const nomeEncontrado = dataUser.userName || "Usuário";
           const iniciais = nomeEncontrado.split(' ').filter((n: string) => n.length > 0).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
           setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais });
 
-          // 2. Listener de Ambientes (Firestore)
           const ambientesRef = collection(db, "empresas", foundEmpresaId, "ambientes");
           const unsubAmbientes = onSnapshot(ambientesRef, (snapshot) => {
             const lista: AmbienteData[] = [];
@@ -123,7 +108,6 @@ export default function AmbientesScreen() {
             snapshot.forEach((docAmb) => {
               const amb = docAmb.data();
               
-              // Filtro para não exibir o Ambiente_1 (conforme lógica original)
               if (docAmb.id === 'Ambiente_1') return;
 
               const sensores = amb.sensores || {};
@@ -131,11 +115,9 @@ export default function AmbientesScreen() {
               lista.push({
                 id: docAmb.id,
                 nomeExibicao: docAmb.id.replace(/_/g, ' '),
-                // Ajuste para ler campos do Firestore (minúsculas conforme dashboard anterior)
                 temperatura: sensores.temperatura !== undefined ? `${sensores.temperatura}°` : '--',
                 umidade: sensores.umidade !== undefined ? `${sensores.umidade}%` : '--',
                 co2: sensores.co2 !== undefined ? String(sensores.co2) : '--',
-                // Lendo campos de características (assumindo estrutura do dashboard anterior)
                 tipo: amb.tipo || '',
                 area: amb.area || '',
                 capacidade: amb.capacidade || '',
@@ -146,7 +128,6 @@ export default function AmbientesScreen() {
             setAmbientes(lista);
           });
 
-          // Cleanup do listener de ambientes
           return () => unsubAmbientes();
         }
       } catch (error) {
@@ -174,7 +155,6 @@ export default function AmbientesScreen() {
       const ambientesRef = collection(db, "empresas", empresaId, "ambientes");
 
       if (isEditing && selectedAmbiente) {
-        // --- ATUALIZAR AMBIENTE ---
         const ambRef = doc(ambientesRef, selectedAmbiente.id);
         await updateDoc(ambRef, {
           tipo: formTipo,
@@ -184,18 +164,14 @@ export default function AmbientesScreen() {
         });
         Alert.alert("Sucesso", "Ambiente atualizado!");
       } else {
-        // --- CRIAR NOVO AMBIENTE ---
-        // Lógica de substituir Ambiente_1 se for o único
         const snapshot = await getDocs(ambientesRef);
         const docs = snapshot.docs;
         
-        // Se só existe o 'Ambiente_1', deletamos ele antes
         if (docs.length === 1 && docs[0].id === 'Ambiente_1') {
           await deleteDoc(doc(ambientesRef, 'Ambiente_1'));
         }
 
         const novoAmbRef = doc(ambientesRef, novoId);
-        // Payload alinhado com a estrutura do Firestore (Dashboard)
         const payload = {
           tipo: formTipo,
           area: formArea || "0",
@@ -204,14 +180,25 @@ export default function AmbientesScreen() {
           sensores: { 
             temperatura: 0, 
             umidade: 0, 
-            co2: 0 
-            // Adicione outros sensores se necessário
+            co2: 0,
+            particulas:0
           },
-          perifericos: {} // Inicia vazio ou com padrão
+          perifericos: {} 
         };
 
         await setDoc(novoAmbRef, payload);
-        Alert.alert("Sucesso", "Ambiente criado!");
+
+        // --- NOVA LÓGICA: Criar a coleção 'historico' com os dados para o gráfico ---
+        const historicoRef = collection(novoAmbRef, "historico");
+        await setDoc(doc(historicoRef, "registro_inicial"), {
+          timestamp: new Date().toISOString(),
+          temperatura: 0,
+          umidade: 0,
+          co2: 0,
+          qualidade_ar: 100 // Valor inicial para qualidade do ar
+        });
+
+        Alert.alert("Sucesso", "Ambiente criado com sucesso!");
       }
       
       setIsAdding(false);
@@ -336,7 +323,7 @@ export default function AmbientesScreen() {
         <View style={{height: 100}} /> 
       </ScrollView>
 
-      {/* MODAL NOVO/EDITAR AMBIENTE */}
+      {/* MODAIS MANTIDOS INTACTOS AQUI */}
       <Modal visible={isAdding} transparent animationType="fade" onRequestClose={() => setIsAdding(false)}>
         <View style={styles.modalOverlayBlack}>
           <View style={styles.formCard}>
@@ -392,7 +379,6 @@ export default function AmbientesScreen() {
         </View>
       </Modal>
 
-      {/* MODAL PERFIL */}
       <Modal animationType="fade" transparent={true} visible={isProfileVisible} onRequestClose={() => setIsProfileVisible(false)}>
         <View style={styles.modalOverlay}>
           <Pressable style={styles.modalBackdrop} onPress={() => setIsProfileVisible(false)} />

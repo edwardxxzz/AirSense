@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView,
   Pressable, Image, ScrollView, KeyboardAvoidingView, Platform, Alert
@@ -12,21 +12,13 @@ import { auth, db } from '../services/firebaseConfig';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
-  sendPasswordResetEmail,
-  GoogleAuthProvider,
-  signInWithCredential 
+  sendPasswordResetEmail
 } from "firebase/auth";
 
 // Métodos do Firestore
-import { doc, setDoc, getDoc } from "firebase/firestore";
-
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
-import * as AuthSession from 'expo-auth-session'; 
-WebBrowser.maybeCompleteAuthSession();
+import { doc, setDoc, getDoc, collection, addDoc } from "firebase/firestore";
 
 const LogoImg = require('../assets/images/logo.png');
-const GoogleIcon = require('../assets/images/google_logo.png');
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -45,28 +37,6 @@ export default function LoginScreen() {
   const [secureTextConfirm, setSecureTextConfirm] = useState(true);
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [hasLoginError, setHasLoginError] = useState(false);
-
-  // --- GOOGLE AUTH CONFIG ---
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: '211530848431-hmecmvt1opnnu6smcg535egfeebq9vd3.apps.googleusercontent.com',
-    androidClientId: '211530848431-hmecmvt1opnnu6smcg535egfeebq9vd3.apps.googleusercontent.com',
-    iosClientId: '211530848431-hmecmvt1opnnu6smcg535egfeebq9vd3.apps.googleusercontent.com',
-  });
-
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { id_token } = response.params;
-      const credential = GoogleAuthProvider.credential(id_token);
-      signInWithCredential(auth, credential)
-        .then(() => router.replace('/home'))
-        .catch((error) => Alert.alert("Erro Google", error.message));
-    }
-  }, [response]);
-
-  const handleGoogleLogin = async () => {
-    const redirectUri = AuthSession.makeRedirectUri({ scheme: 'pf' });
-    try { await promptAsync({ redirectUri }); } catch (e) { Alert.alert("Erro", "Falha ao abrir o navegador."); }
-  };
 
   const isEmailValid = (text: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text);
   const canLogin = isEmailValid(email) && password.length > 0;
@@ -103,7 +73,7 @@ export default function LoginScreen() {
       const empresaRef = doc(db, "empresas", safeCompany);
       const empresaSnap = await getDoc(empresaRef);
 
-      // 4. Se a empresa NÃO existe, criar a estrutura inicial (Empresa, Config, Ambientes)
+      // 4. Se a empresa NÃO existe, criar a estrutura inicial
       if (!empresaSnap.exists()) {
         console.log("Criando estrutura da empresa...");
         
@@ -113,15 +83,18 @@ export default function LoginScreen() {
           criadoEm: new Date().toISOString()
         });
 
-        // Cria subcoleção 'config' (Irmão de usuarios)
-        await setDoc(doc(db, "empresas", safeCompany, "config", "geral"), {
+        // NOVA ESTRUTURA: Cria subcoleção 'historico_geral' com o primeiro registro temporal
+        const historicoRef = collection(db, "empresas", safeCompany, "historico_geral");
+        await addDoc(historicoRef, {
+          timestamp: Date.now(),
+          hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           co2_medio: 0,
           indice_conforto: 0,
           qual_do_ar: 0,
           temperatura_media: 0
         });
 
-        // Cria subcoleção 'ambientes' (Irmão de usuarios)
+        // Cria subcoleção 'ambientes'
         await setDoc(doc(db, "empresas", safeCompany, "ambientes", "Ambiente_1"), {
           nome: "Ambiente 1",
           tipo: "Geral",
@@ -131,16 +104,15 @@ export default function LoginScreen() {
         });
       }
 
-      // 5. Criar o documento do Usuário como IRMÃO de ambientes e config
-      // Caminho: empresas -> safeCompany -> usuarios -> uid
+      // 5. Criar o documento do Usuário
       console.log("Salvando dados do usuário no Firestore...");
       
       await setDoc(doc(db, "empresas", safeCompany, "usuarios", uid), {
         email: email.toLowerCase().trim(),
-        userName: fullName,          // Campo: User Name
-        userId: uid,                 // Campo: User ID
-        dataLogin: new Date().toISOString(), // Campo: Data de Login
-        senha: "Gerenciada pelo Firebase Auth" // Apenas placeholder visual
+        userName: fullName,
+        userId: uid,
+        dataLogin: new Date().toISOString(),
+        senha: "Gerenciada pelo Firebase Auth" 
       });
 
       console.log("Cadastro completo!");
@@ -161,7 +133,6 @@ export default function LoginScreen() {
     } catch (error: any) { Alert.alert("Erro", "E-mail não encontrado."); }
   };
 
-  // --- DESIGN PRESERVADO ---
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
@@ -218,12 +189,6 @@ export default function LoginScreen() {
                     <Text style={styles.buttonText}>Entrar</Text>
                     <ArrowRight color="white" size={20} />
                   </LinearGradient>
-                </TouchableOpacity>
-
-                <View style={styles.dividerContainer}><View style={styles.divider} /><Text style={styles.dividerText}> ou </Text><View style={styles.divider} /></View>
-                <TouchableOpacity style={styles.googleButton} disabled={!request} onPress={handleGoogleLogin}>
-                  <Image source={GoogleIcon} style={styles.googleIcon} />
-                  <Text style={styles.googleButtonText}>Entrar com Google</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -324,12 +289,6 @@ const styles = StyleSheet.create({
   forgotText: { color: '#0097B2', fontSize: 13, marginTop: 18 },
   mainButton: { flexDirection: 'row', height: 56, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   buttonText: { color: 'white', fontWeight: 'bold', fontSize: 16, marginRight: 10 },
-  dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 30 },
-  divider: { flex: 1, height: 1, backgroundColor: '#E2E8F0' },
-  dividerText: { color: '#94A3B8', fontSize: 12, marginHorizontal: 12 },
-  googleButton: { width: '100%', height: 56, borderWidth: 1.5, borderColor: '#000', borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexDirection: 'row' },
-  googleIcon: { width: 22, height: 22, marginRight: 12 },
-  googleButtonText: { color: '#000', fontWeight: '600' },
   stepperContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   stepCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },
   stepActive: { backgroundColor: '#0097B2' },

@@ -10,89 +10,160 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Circle } from 'react-native-svg';
 import { LineChart } from "react-native-chart-kit";
 
-import { ref, onValue, update } from "firebase/database";
-import { auth, database } from '../services/firebaseConfig';
-import { signOut } from "firebase/auth";
+// --- FIREBASE CONFIG ---
+import { auth, db } from '../services/firebaseConfig';
+import { signOut, onAuthStateChanged } from "firebase/auth";
+import { 
+  doc, 
+  onSnapshot, 
+  updateDoc, 
+  collection, 
+  query, 
+  where, 
+  collectionGroup, 
+  getDocs,
+  orderBy,
+  limit
+} from "firebase/firestore";
 
 const { width } = Dimensions.get('window');
 const LogoImg = require('../assets/images/logo.png');
 
 export default function AmbienteDetalhes() {
   const router = useRouter();
-  const { id, nome, empresa } = useLocalSearchParams(); 
+  
+  const params = useLocalSearchParams<{ id: string; nome: string; empresa: string }>();
+  const { id, nome, empresa } = params;
   
   const [tab, setTab] = useState<'historico' | 'perifericos'>('historico');
   const [loadingPeriferico, setLoadingPeriferico] = useState(false);
   const [isProfileVisible, setIsProfileVisible] = useState(false);
   
   const [userData, setUserData] = useState({ nome: 'Usuário', email: '', iniciais: 'US' });
-  const [sensores, setSensores] = useState({ temperatura: '--', umidade: '--', co2: '--', indice_geral: 0, particulas: '10.2' });
+  const [sensores, setSensores] = useState({ temperatura: '--', umidade: '--', co2: '--', indice_geral: 0, particulas: '--' });
   const [caracteristicas, setCaracteristicas] = useState({ tipo: 'Tipo', andar: 'Localização' });
-  const [periferico, setPeriferico] = useState({ nome: '', tipo: 'Ar Condicionado', marca: '--', status: false, dbPath: '' });
+  const [periferico, setPeriferico] = useState({ nome: '', tipo: 'Ar Condicionado', marca: '--', status: false, docId: '' });
 
-  // --- LÓGICA DO GRÁFICO CIRCULAR (SVG) ---
+  // Estado para armazenar os dados do histórico para os gráficos
+  const [historyData, setHistoryData] = useState({
+    labels: ["00:00"],
+    temps: [0],
+    umids: [0],
+    co2s: [0],
+    arQualidade: [0]
+  });
+
+  // Lógica do Gráfico Circular
   const radius = 55;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (sensores.indice_geral / 100) * circumference;
 
   useEffect(() => {
-    const user = auth.currentUser;
-    if (user) {
-      const empresasRef = ref(database, 'empresas');
-      onValue(empresasRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          let nomeEncontrado = user.displayName || "Usuário";
-          Object.keys(data).forEach(empKey => {
-            const usuarios = data[empKey].usuarios;
-            if (usuarios) {
-              Object.keys(usuarios).forEach(uKey => {
-                if (usuarios[uKey].uid === user.uid) nomeEncontrado = uKey.replace(/_/g, ' ');
-              });
-            }
-          });
-          const partes = nomeEncontrado.trim().split(/\s+/);
-          const iniciais = (partes[0][0] + (partes.length > 1 ? partes[1][0] : '')).toUpperCase();
-          setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais });
-        }
-      });
-    }
+    // Listener de Autenticação
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const userQuery = query(collectionGroup(db, 'usuarios'), where('userId', '==', user.uid));
+          const userSnapshot = await getDocs(userQuery);
+          if (!userSnapshot.empty) {
+            const data = userSnapshot.docs[0].data();
+            const nomeEncontrado = data.userName || "Usuário";
+            const partes = nomeEncontrado.trim().split(/\s+/);
+            const iniciais = (partes[0][0] + (partes.length > 1 ? partes[1][0] : '')).toUpperCase();
+            setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais });
+          }
+        } catch (e) { console.error("Erro User Auth:", e); }
+      }
+    });
 
-    if (!id || !empresa) return;
-    const pathBase = `empresas/${empresa}/ambientes/${id}`;
+    if (!id || !empresa || !db) return;
+
+    // 1. Listener do Ambiente (Dados Atuais)
+    const ambRef = doc(db, "empresas", String(empresa), "ambientes", String(id));
+    const unsubAmbiente = onSnapshot(ambRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const d = docSnap.data();
+        const s = d.sensores || {};
+        setSensores({
+          temperatura: s.temperatura ?? '--',
+          umidade: s.umidade ?? '--',
+          co2: s.co2 ?? '--',
+          indice_geral: d.indice_conforto || s.indice_geral || 0,
+          particulas: s.particulas ?? '--'
+        });
+        setCaracteristicas({
+          tipo: d.tipo || 'Tipo',
+          andar: d.andar || 'Localização'
+        });
+      }
+    }, (error) => console.error("Erro Snapshot Ambiente:", error));
+
+    // 2. Listener do Histórico (Para os Gráficos)
+    const histRef = collection(db, "empresas", String(empresa), "ambientes", String(id), "historico");
+    // Busca os últimos 5 registros ordenados pelo mais recente
+    const qHist = query(histRef, orderBy("timestamp", "desc"), limit(5));
     
-    onValue(ref(database, `${pathBase}/sensores`), (snap) => {
-      if (snap.exists()) {
-        const d = snap.val();
-        setSensores(prev => ({ 
-          ...prev, 
-          temperatura: d.Temperatura || '--', 
-          umidade: d.Umidade || '--', 
-          co2: d.CO2 || '--', 
-          indice_geral: d.indice_geral || 0 
-        }));
-      }
-    });
+    const unsubHistorico = onSnapshot(qHist, (snap) => {
+      const labels: string[] = [];
+      const temps: number[] = [];
+      const umids: number[] = [];
+      const co2s: number[] = [];
+      const arQualidade: number[] = [];
 
-    onValue(ref(database, `${pathBase}/características`), (snap) => {
-      if (snap.exists()) setCaracteristicas(snap.val());
-    });
+      // Inverte o array para que o gráfico fique em ordem cronológica (da esquerda para direita)
+      const docs = snap.docs.reverse();
 
-    onValue(ref(database, `${pathBase}/perifericos/ar_condicionado`), (snap) => {
-      if (snap.exists()) {
-        const data = snap.val();
-        const validKey = Object.keys(data).find(k => k !== 'geral');
-        if (validKey) {
-          setPeriferico({
-            status: data[validKey].status ?? false,
-            marca: data[validKey].marca ?? 'Marca do periférico',
-            tipo: 'Ar Condicionado',
-            nome: validKey.replace(/_/g, ' '),
-            dbPath: `${pathBase}/perifericos/ar_condicionado/${validKey}`
-          });
+      docs.forEach(docSnap => {
+        const data = docSnap.data();
+        
+        // Tenta converter o timestamp para pegar a hora
+        let timeStr = "--:--";
+        if (data.timestamp) {
+          const dateObj = new Date(data.timestamp);
+          const hh = dateObj.getHours().toString().padStart(2, '0');
+          const mm = dateObj.getMinutes().toString().padStart(2, '0');
+          timeStr = `${hh}:${mm}`;
         }
+
+        labels.push(timeStr);
+        temps.push(data.temperatura || 0);
+        umids.push(data.umidade || 0);
+        co2s.push(data.co2 || 0);
+        arQualidade.push(data.qualidade_ar || data.particulas || 0);
+      });
+
+      // Se não houver dados, colocamos valores zerados para o gráfico não quebrar
+      if (labels.length === 0) {
+        setHistoryData({ labels: ["00:00"], temps: [0], umids: [0], co2s: [0], arQualidade: [0] });
+      } else {
+        setHistoryData({ labels, temps, umids, co2s, arQualidade });
       }
-    });
+    }, (error) => console.error("Erro Snapshot Histórico:", error));
+
+    // 3. Listener dos Periféricos
+    const perRef = collection(db, "empresas", String(empresa), "ambientes", String(id), "perifericos");
+    const unsubPerifericos = onSnapshot(perRef, (snap) => {
+      if (!snap.empty) {
+        const firstDoc = snap.docs[0];
+        const pData = firstDoc.data();
+        setPeriferico({
+          nome: firstDoc.id.replace(/_/g, ' '),
+          tipo: pData.tipo || 'Dispositivo',
+          marca: pData.marca || '--',
+          status: pData.status || false,
+          docId: firstDoc.id 
+        });
+      } else {
+        setPeriferico({ nome: '', tipo: '', marca: '', status: false, docId: '' });
+      }
+    }, (error) => console.error("Erro Snapshot Perifericos:", error));
+
+    return () => {
+      unsubscribeAuth();
+      unsubAmbiente();
+      unsubHistorico();
+      unsubPerifericos();
+    };
   }, [id, empresa]);
 
   const handleLogout = async () => {
@@ -102,13 +173,17 @@ export default function AmbienteDetalhes() {
   };
 
   const toggleSwitch = async () => {
-    if (loadingPeriferico || !periferico.dbPath) return;
+    if (loadingPeriferico || !periferico.docId || !empresa || !id || !db) return;
+    
     setLoadingPeriferico(true);
     const novoStatus = !periferico.status;
+    
     try {
-      await update(ref(database, periferico.dbPath), { status: novoStatus });
+      const perDocRef = doc(db, "empresas", String(empresa), "ambientes", String(id), "perifericos", periferico.docId);
+      await updateDoc(perDocRef, { status: novoStatus });
     } catch (e) { 
-      Alert.alert("Erro", "Falha na conexão."); 
+      console.error("Erro ao atualizar status:", e);
+      Alert.alert("Erro", "Não foi possível alterar o estado do dispositivo."); 
     } finally { 
       setLoadingPeriferico(false); 
     }
@@ -118,6 +193,7 @@ export default function AmbienteDetalhes() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* HEADER */}
       <View style={styles.topAppBar}>
         <Image source={LogoImg} style={styles.topLogo} resizeMode="contain" />
         <View style={styles.headerIcons}>
@@ -131,14 +207,16 @@ export default function AmbienteDetalhes() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* TÍTULO E VOLTAR */}
         <View style={styles.titleSection}>
           <TouchableOpacity onPress={() => router.back()}><ArrowLeft color="#000" size={32} /></TouchableOpacity>
           <View>
-            <Text style={styles.envName}>{nome}</Text>
+            <Text style={styles.envName}>{nome || 'Ambiente'}</Text>
             <Text style={styles.envSub}>{caracteristicas.tipo} • {caracteristicas.andar}</Text>
           </View>
         </View>
 
+        {/* CARDS DE MÉTRICAS */}
         <View style={styles.metricsGrid}>
           <MetricCard label="Temperatura" value={sensores.temperatura} unit="°C" icon={<Thermometer color="#FFF" size={24} />} iconBg="#2563EB" />
           <MetricCard label="Umidade" value={sensores.umidade} unit="%" icon={<Droplets color="#FFF" size={24} />} iconBg="#2563EB" />
@@ -146,7 +224,7 @@ export default function AmbienteDetalhes() {
           <MetricCard label="Partículas" value={sensores.particulas} unit="µg/m²" icon={<Wind color="#FFF" size={24} />} iconBg="#2563EB" />
         </View>
 
-        {/* CARD ÍNDICE DE CONFORTO COM ESPAÇAMENTO AJUSTADO */}
+        {/* GRÁFICO CIRCULAR DE CONFORTO */}
         <View style={[styles.cardMain, { marginTop: 25 }]}>
           <Text style={styles.cardTitle}>Índice de Conforto</Text>
           <View style={styles.gaugeContainer}>
@@ -172,6 +250,7 @@ export default function AmbienteDetalhes() {
           <Text style={styles.statusDetail}>Baseado em temperatura, umidade, CO₂ e qualidade do ar</Text>
         </View>
 
+        {/* TABS CONTROLS */}
         <View style={styles.tabContainer}>
           <TouchableOpacity style={[styles.tabItem, tab === 'historico' && styles.tabActive]} onPress={() => setTab('historico')}>
             <Text style={[styles.tabText, tab === 'historico' && styles.tabTextActive]}>Histórico</Text>
@@ -181,6 +260,7 @@ export default function AmbienteDetalhes() {
           </TouchableOpacity>
         </View>
 
+        {/* CONTEÚDO DAS TABS */}
         {tab === 'historico' ? (
           <View>
             {/* GRÁFICO 1: TEMPERATURA E UMIDADE */}
@@ -188,10 +268,10 @@ export default function AmbienteDetalhes() {
               <Text style={styles.cardTitle}>Histórico de Temperatura e Umidade</Text>
               <LineChart
                 data={{
-                  labels: ["06:00", "06:00", "07:00", "05:00"],
+                  labels: historyData.labels,
                   datasets: [
-                    { data: [55, 35, 48, 38], color: () => `#3B82F6`, strokeWidth: 3 },
-                    { data: [25, 28, 24, 26], color: () => `#EF4444`, strokeWidth: 3 }
+                    { data: historyData.temps, color: () => `#EF4444`, strokeWidth: 3 }, // Vermelho - Temp
+                    { data: historyData.umids, color: () => `#3B82F6`, strokeWidth: 3 }  // Azul - Umi
                   ]
                 }}
                 width={width - 80}
@@ -206,15 +286,15 @@ export default function AmbienteDetalhes() {
               </View>
             </View>
 
-            {/* GRÁFICO 2: CO2 E QUALIDADE DO AR (PRESERVADO) */}
+            {/* GRÁFICO 2: CO2 E QUALIDADE DO AR (Novo Gráfico) */}
             <View style={styles.cardMain}>
-              <Text style={styles.cardTitle}>Histórico de CO₂ e Qualidade do Ar</Text>
+              <Text style={styles.cardTitle}>Histórico de CO₂ e Partículas</Text>
               <LineChart
                 data={{
-                  labels: ["06:00", "06:00", "07:00", "05:00"],
+                  labels: historyData.labels,
                   datasets: [
-                    { data: [400, 450, 420, 480], color: () => `#8B5CF6`, strokeWidth: 3 },
-                    { data: [80, 85, 75, 90], color: () => `#10B981`, strokeWidth: 3 }
+                    { data: historyData.co2s, color: () => `#A855F7`, strokeWidth: 3 }, // Roxo - CO2
+                    { data: historyData.arQualidade, color: () => `#10B981`, strokeWidth: 3 }  // Verde - Partículas/AR
                   ]
                 }}
                 width={width - 80}
@@ -224,13 +304,13 @@ export default function AmbienteDetalhes() {
                 style={styles.chartStyle}
               />
               <View style={styles.legendRow}>
-                <View style={styles.legendItem}><View style={[styles.dot, {backgroundColor: '#8B5CF6'}]} /><Text style={styles.legendText}>CO₂</Text></View>
-                <View style={styles.legendItem}><View style={[styles.dot, {backgroundColor: '#10B981'}]} /><Text style={styles.legendText}>Qualidade</Text></View>
+                <View style={styles.legendItem}><View style={[styles.dot, {backgroundColor: '#A855F7'}]} /><Text style={styles.legendText}>CO₂</Text></View>
+                <View style={styles.legendItem}><View style={[styles.dot, {backgroundColor: '#10B981'}]} /><Text style={styles.legendText}>Partículas</Text></View>
               </View>
             </View>
           </View>
         ) : (
-          periferico.nome !== '' && (
+          periferico.nome !== '' ? (
             <View style={styles.peripheralCard}>
               <View style={styles.peripheralHeader}>
                 <View style={styles.peripheralIconBox}><Snowflake color="#06B6D4" size={24} /></View>
@@ -238,12 +318,20 @@ export default function AmbienteDetalhes() {
                   <Text style={styles.peripheralTitle}>{periferico.nome}</Text>
                   <Text style={styles.peripheralSubtitle}>{periferico.tipo}</Text>
                 </View>
-                <Switch trackColor={{ false: "#E2E8F0", true: "#0EA5E9" }} thumbColor="#FFF" onValueChange={toggleSwitch} value={periferico.status} disabled={loadingPeriferico} />
+                <Switch 
+                  trackColor={{ false: "#E2E8F0", true: "#0EA5E9" }} 
+                  thumbColor="#FFF" 
+                  onValueChange={toggleSwitch} 
+                  value={periferico.status} 
+                  disabled={loadingPeriferico} 
+                />
               </View>
               <View style={styles.cardSeparator} />
               <Text style={styles.footerBrand}>{periferico.marca}</Text>
               <Text style={styles.footerStatus}>Status do periférico</Text>
             </View>
+          ) : (
+            <Text style={{textAlign: 'center', color: '#94A3B8', marginTop: 20}}>Nenhum periférico encontrado.</Text>
           )
         )}
       </ScrollView>
@@ -285,7 +373,10 @@ function MetricCard({ label, value, unit, icon, iconBg }: any) {
     <View style={styles.mCard}>
       <View style={[styles.mIconCircle, { backgroundColor: iconBg }]}>{icon}</View>
       <Text style={styles.mLabel}>{label}</Text>
-      <View style={styles.mValueRow}><Text style={styles.mValue}>{value}</Text><Text style={styles.mUnit}>{unit}</Text></View>
+      <View style={styles.mValueRow}>
+        <Text style={styles.mValue}>{value}</Text>
+        <Text style={styles.mUnit}>{unit}</Text>
+      </View>
     </View>
   );
 }
@@ -313,7 +404,7 @@ const styles = StyleSheet.create({
   envName: { fontSize: 28, fontWeight: 'bold', color: '#1E293B' },
   envSub: { fontSize: 14, color: '#64748B' },
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12 },
-  mCard: { backgroundColor: '#FFF', width: (width / 2) - 26, borderRadius: 24, padding: 16, elevation: 3 },
+  mCard: { backgroundColor: '#FFF', width: (width / 2) - 26, borderRadius: 24, padding: 16, elevation: 3, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
   mIconCircle: { width: 48, height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   mLabel: { fontSize: 13, color: '#64748B' },
   mValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
