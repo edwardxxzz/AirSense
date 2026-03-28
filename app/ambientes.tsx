@@ -206,7 +206,6 @@ export default function AmbientesScreen() {
           sensores: { 
             temperatura: 0, 
             umidade: 0, 
-            co2: 0,
             luminosidade: 0,
           },
         };
@@ -220,18 +219,22 @@ export default function AmbientesScreen() {
           temperatura: 0,
           umidade: 0,
           co2: 0,
+          luminosidade:0,
           qualidade_ar: 100 
         });
 
-        // --- PASTA PERIFÉRICOS (RESTAURADA) ---
+        // --- PASTA PERIFÉRICOS ---
         const perifericosRef = collection(novoAmbRef, "perifericos");
-        await setDoc(doc(perifericosRef, "registro_inicial"), {
-          timestamp: new Date().toISOString(),
-          status: "inicializado",
-          observacao: "Pasta criada automaticamente"
+        await setDoc(doc(perifericosRef, "ar_condicionado"), {
+          geral: {
+            ligado: false,
+            marca: "",
+            modelo: "",
+            temperatura: 24,
+          }
         });
 
-        // --- PASTA AGENDAMENTOS (NOVA) ---
+        // --- PASTA AGENDAMENTOS ---
         const agendamentosRef = collection(novoAmbRef, "agendamentos");
         await setDoc(doc(agendamentosRef, "registro_inicial"), {
           timestamp: new Date().toISOString(),
@@ -294,19 +297,32 @@ export default function AmbientesScreen() {
     setMenuVisibleId(null);
   };
 
+  // --- FUNÇÃO DE EXCLUSÃO CORRIGIDA AQUI ---
   const handleDeleteAmbiente = (id: string) => {
-    setMenuVisibleId(null);
-    Alert.alert("Excluir", "Deseja realmente excluir este ambiente?", [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Excluir", style: "destructive", onPress: async () => {
-        if(!empresaId) return;
-        try {
-          await deleteDoc(doc(db, "empresas", empresaId, "ambientes", id));
-        } catch (e) {
-          Alert.alert("Erro", "Falha ao excluir.");
+    setMenuVisibleId(null); // Oculta o menu primeiro
+    
+    Alert.alert(
+      "Excluir Ambiente", 
+      "Deseja realmente excluir este ambiente?", 
+      [
+        { text: "Cancelar", style: "cancel" },
+        { 
+          text: "Excluir", 
+          style: "destructive", 
+          onPress: async () => {
+            if(!empresaId) return;
+            try {
+              // Exclui o documento principal, o que faz ele sumir da tela instantaneamente
+              await deleteDoc(doc(db, "empresas", empresaId, "ambientes", id));
+              Alert.alert("Sucesso", "Ambiente excluído.");
+            } catch (e) {
+              console.error("Erro ao excluir:", e);
+              Alert.alert("Erro", "Falha ao excluir.");
+            }
+          }
         }
-      }}
-    ]);
+      ]
+    );
   };
 
   const resetForm = () => {
@@ -669,7 +685,6 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#000' },
   headerSubtitle: { fontSize: 14, color: '#64748B' },
   
-  // --- BOTÕES NOVOS MANTIDOS ---
   actionButtonsRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
   btnActionPrimary: { flex: 1, backgroundColor: '#2563EB', height: 48, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   btnActionPrimaryText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
@@ -678,9 +693,8 @@ const styles = StyleSheet.create({
   
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 12, paddingHorizontal: 15, height: 50, marginBottom: 25, borderWidth: 1, borderColor: '#E2E8F0', gap: 10 },
   searchContainerFocused: { borderColor: '#000', backgroundColor: '#FFF' },
-  searchInput: { flex: 1, height: '90%', fontSize: 15, color: '#1E293B', outlineWidth: 0, outlineColor: "transparent" },
+  searchInput: { flex: 1, height: '90%', fontSize: 15, color: '#1E293B', outlineWidth: 0, outlineColor: "transparent" as any },
   
-  // --- DESIGN DE CARTÃO ORIGINAL RESTAURADO ---
   roomCard: { backgroundColor: '#F0F9FF', borderRadius: 24, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: '#BAE6FD' },
   roomHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   roomInfoMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -706,7 +720,7 @@ const styles = StyleSheet.create({
   formSubtitle: { fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 25 },
   label: { fontSize: 14, fontWeight: '700', color: '#1E293B', marginBottom: 8 },
   inputBox: { height: 55, borderWidth: 1.5, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
-  input: { flex: 1, height: '90%', fontSize: 15, color: '#000', outlineWidth: 0, outlineColor: "transparent" },
+  input: { flex: 1, height: '90%', fontSize: 15, color: '#000', outlineWidth: 0, outlineColor: "transparent" as any },
   row: { flexDirection: 'row' },
   formButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 },
   btnCancelForm: { flex: 1, height: 50, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },
@@ -717,23 +731,22 @@ const styles = StyleSheet.create({
   dropdownContainer: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, marginTop: -15, marginBottom: 18, elevation: 2 },
   dropdownItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   dropdownText: { fontSize: 15, color: '#1E293B' },
-  
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row' },
-  modalBackdrop: { flex: 0.15 },
-  profileSheet: { flex: 0.85, backgroundColor: '#FFF', padding: 24, paddingTop: 60, borderTopLeftRadius: 30, borderBottomLeftRadius: 30 },
-  profileHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 },
-  profileTitle: { fontSize: 24, fontWeight: 'bold', color: '#000' },
-  profileUserInfo: { alignItems: 'center', marginBottom: 20 },
-  largeAvatar: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#3B82F6', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
-  largeAvatarText: { color: '#FFF', fontSize: 30, fontWeight: 'bold' },
-  userName: { fontSize: 20, fontWeight: 'bold', color: '#000' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject },
+  profileSheet: { backgroundColor: '#FFF', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, paddingBottom: 40, elevation: 20 },
+  profileHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
+  profileTitle: { fontSize: 22, fontWeight: 'bold', color: '#1E293B' },
+  profileUserInfo: { alignItems: 'center', marginBottom: 25 },
+  largeAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  largeAvatarText: { color: '#FFF', fontSize: 28, fontWeight: 'bold' },
+  userName: { fontSize: 20, fontWeight: 'bold', color: '#1E293B', marginBottom: 4 },
   userEmail: { fontSize: 14, color: '#64748B' },
-  separator: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 25 },
-  configItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  configItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  configIconBox: { width: 45, height: 45, backgroundColor: '#F8FAFC', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  configItemTitle: { fontSize: 16, fontWeight: '600', color: '#000' },
-  configItemSub: { fontSize: 12, color: '#94A3B8' },
-  btnSignOut: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: '#EF4444', borderRadius: 15, height: 55 },
-  btnSignOutText: { color: '#EF4444', fontWeight: 'bold', fontSize: 16 }
+  separator: { height: 1, backgroundColor: '#E2E8F0', marginBottom: 20 },
+  configItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 15 },
+  configItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 15 },
+  configIconBox: { width: 45, height: 45, borderRadius: 12, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
+  configItemTitle: { fontSize: 16, fontWeight: '600', color: '#1E293B' },
+  configItemSub: { fontSize: 13, color: '#64748B', marginTop: 2 },
+  btnSignOut: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#FEF2F2', paddingVertical: 16, borderRadius: 16 },
+  btnSignOutText: { color: '#EF4444', fontSize: 16, fontWeight: 'bold' }
 });

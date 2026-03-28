@@ -4,7 +4,7 @@ import {
   Image, Dimensions, Switch, Alert, Modal, Pressable
 } from 'react-native';
 import { 
-  ArrowLeft, Bell, Thermometer, Droplets, Lightbulb, Snowflake, X, User, LogOut, ChevronRight
+  ArrowLeft, Bell, Thermometer, Droplets, Lightbulb, Snowflake, X, User, LogOut, ChevronRight, Calendar, Clock
 } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Circle } from 'react-native-svg';
@@ -35,19 +35,17 @@ export default function AmbienteDetalhes() {
   const params = useLocalSearchParams<{ id: string; nome: string; empresa: string }>();
   const { id, nome, empresa } = params;
   
-  // Adicionado 'agendamentos' aos tipos de tab
   const [tab, setTab] = useState<'historico' | 'perifericos' | 'agendamentos'>('historico');
   const [loadingPeriferico, setLoadingPeriferico] = useState(false);
   const [isProfileVisible, setIsProfileVisible] = useState(false);
   
   const [userData, setUserData] = useState({ nome: 'Usuário', email: '', iniciais: 'US' });
-  // Substituído co2 e particulas por luminosidade
   const [sensores, setSensores] = useState({ temperatura: '--', umidade: '--', luminosidade: '--', indice_geral: 0 });
   const [caracteristicas, setCaracteristicas] = useState({ tipo: 'Tipo', andar: 'Localização' });
   
   const [perifericosList, setPerifericosList] = useState<any[]>([]);
+  const [agendamentosList, setAgendamentosList] = useState<any[]>([]); // Estado para agendamentos
 
-  // Atualizado para contemplar luminosidade no histórico
   const [historyData, setHistoryData] = useState({
     labels: ["00:00"],
     temps: [0],
@@ -78,24 +76,25 @@ export default function AmbienteDetalhes() {
 
     if (!id || !empresa || !db) return;
 
+    // --- DADOS DO AMBIENTE ---
     const ambRef = doc(db, "empresas", String(empresa), "ambientes", String(id));
     const unsubAmbiente = onSnapshot(ambRef, (docSnap) => {
       if (docSnap.exists()) {
         const d = docSnap.data();
         setCaracteristicas({
-          tipo: d.tipo || 'Tipo',
-          andar: d.andar || 'Localização'
+          tipo: d.config?.tipo || d.tipo || 'Tipo',
+          andar: d.config?.andar || d.andar || 'Localização'
         });
       }
     }, (error) => console.error("Erro Snapshot Ambiente:", error));
 
+    // --- HISTÓRICO ---
     const histRef = collection(db, "empresas", String(empresa), "ambientes", String(id), "historico");
     const qHist = query(histRef, orderBy("timestamp", "desc"), limit(5));
     
     const unsubHistorico = onSnapshot(qHist, (snap) => {
       if (!snap.empty) {
         const maisRecente = snap.docs[0].data(); 
-        // Atualizado para pegar a luminosidade e remover co2/particulas
         setSensores({
           temperatura: maisRecente.temperatura ?? '--',
           umidade: maisRecente.umidade ?? '--',
@@ -116,7 +115,7 @@ export default function AmbienteDetalhes() {
         
         let timeStr = "--:--";
         if (data.timestamp) {
-          const dateObj = data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp);
+          const dateObj = typeof data.timestamp === 'string' ? new Date(data.timestamp) : (data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp));
           const hh = dateObj.getHours().toString().padStart(2, '0');
           const mm = dateObj.getMinutes().toString().padStart(2, '0');
           timeStr = `${hh}:${mm}`;
@@ -135,6 +134,7 @@ export default function AmbienteDetalhes() {
       }
     }, (error) => console.error("Erro Snapshot Histórico:", error));
 
+    // --- PERIFÉRICOS ---
     const perRef = collection(db, "empresas", String(empresa), "ambientes", String(id), "perifericos");
     const unsubPerifericos = onSnapshot(perRef, (snap) => {
       const listaAtualizada: any[] = [];
@@ -146,6 +146,9 @@ export default function AmbienteDetalhes() {
           
           Object.entries(data).forEach(([nomeChave, propriedades]: [string, any]) => {
             if (nomeChave === 'tipo' || nomeChave === 'sensores') return;
+
+            // Filtra o periférico 'geral' do tipo 'ar_condicionado'
+            if (tipoDocId === 'ar_condicionado' && nomeChave === 'geral') return;
 
             if (typeof propriedades === 'object' && propriedades !== null) {
               listaAtualizada.push({
@@ -163,11 +166,35 @@ export default function AmbienteDetalhes() {
       setPerifericosList(listaAtualizada);
     }, (error) => console.error("Erro Snapshot Perifericos:", error));
 
+    // --- AGENDAMENTOS ---
+    const ageRef = collection(db, "empresas", String(empresa), "ambientes", String(id), "agendamentos");
+    const unsubAgendamentos = onSnapshot(ageRef, (snap) => {
+      const listaAgendamentos: any[] = [];
+      
+      if (!snap.empty) {
+        snap.docs.forEach(docSnap => {
+          // Ignorar o documento inicializador criado automaticamente
+          if (docSnap.id === 'registro_inicial') return;
+          
+          const data = docSnap.data();
+          listaAgendamentos.push({
+            id: docSnap.id,
+            titulo: data.titulo || 'Sem Título',
+            objetivo: data.objetivo || 'Sem objetivo',
+            data: data.data || '--/--/----',
+            horario: data.horario || '--:--',
+          });
+        });
+      }
+      setAgendamentosList(listaAgendamentos);
+    }, (error) => console.error("Erro Snapshot Agendamentos:", error));
+
     return () => {
       unsubscribeAuth();
       unsubAmbiente();
       unsubHistorico();
       unsubPerifericos();
+      unsubAgendamentos();
     };
   }, [id, empresa]);
 
@@ -225,14 +252,14 @@ export default function AmbienteDetalhes() {
           </View>
         </View>
 
-        {/* CARDS DE MÉTRICAS (Atualizado com Luminosidade e Layout Centrado) */}
+        {/* CARDS DE MÉTRICAS */}
         <View style={styles.metricsContainer}>
           <View style={styles.metricsRow}>
             <MetricCard label="Temperatura" value={sensores.temperatura} unit="°C" icon={<Thermometer color="#FFF" size={24} />} iconBg="#2563EB" />
             <MetricCard label="Umidade" value={sensores.umidade} unit="%" icon={<Droplets color="#FFF" size={24} />} iconBg="#2563EB" />
           </View>
           <View style={styles.metricsCenter}>
-            <MetricCard label="luminosidade" value={sensores.luminosidade} unit="lux" icon={<Lightbulb color="#FFF" size={24} />} iconBg="#2563EB" />
+            <MetricCard label="Luminosidade" value={sensores.luminosidade} unit="lux" icon={<Lightbulb color="#FFF" size={24} />} iconBg="#2563EB" />
           </View>
         </View>
 
@@ -262,7 +289,7 @@ export default function AmbienteDetalhes() {
           <Text style={styles.statusDetail}>Baseado em temperatura, umidade, luminosidade e qualidade do ar</Text>
         </View>
 
-        {/* TABS CONTROLS (Atualizado com Agendamentos) */}
+        {/* TABS CONTROLS */}
         <View style={styles.tabContainer}>
           <TouchableOpacity style={[styles.tabItem, tab === 'historico' && styles.tabActive]} onPress={() => setTab('historico')}>
             <Text style={[styles.tabText, tab === 'historico' && styles.tabTextActive]}>Histórico</Text>
@@ -300,7 +327,6 @@ export default function AmbienteDetalhes() {
               </View>
             </View>
 
-            {/* Gráfico 2 Atualizado para Luminosidade */}
             <View style={styles.cardMain}>
               <Text style={styles.cardTitle}>Histórico de Luminosidade</Text>
               <LineChart
@@ -351,12 +377,35 @@ export default function AmbienteDetalhes() {
           )
         )}
 
-        {/* Nova Aba de Agendamentos (Conforme Protótipo) */}
+        {/* ABA DE AGENDAMENTOS */}
         {tab === 'agendamentos' && (
-          <View style={styles.emptyScheduleCard}>
-            <Text style={styles.emptyScheduleTitle}>Nenhum agendamento no momento</Text>
-            <Text style={styles.emptyScheduleText}>Clique em Agendar Sala em “Ambientes”.</Text>
-          </View>
+          agendamentosList.length > 0 ? (
+            agendamentosList.map((ag) => (
+              <View key={ag.id} style={styles.scheduleCard}>
+                <View style={styles.scheduleHeader}>
+                  <View style={styles.scheduleIconBox}>
+                    <Calendar color="#3B82F6" size={24} />
+                  </View>
+                  <View style={{flex: 1, marginLeft: 12}}>
+                    <Text style={styles.scheduleTitle}>{ag.titulo}</Text>
+                    <Text style={styles.scheduleSubtitle}>{ag.objetivo}</Text>
+                  </View>
+                </View>
+                <View style={styles.cardSeparator} />
+                <View style={styles.scheduleFooter}>
+                  <View style={styles.scheduleFooterItem}>
+                    <Clock size={16} color="#64748B" />
+                    <Text style={styles.scheduleFooterText}>{ag.data} às {ag.horario}</Text>
+                  </View>
+                </View>
+              </View>
+            ))
+          ) : (
+            <View style={styles.emptyScheduleCard}>
+              <Text style={styles.emptyScheduleTitle}>Nenhum agendamento no momento</Text>
+              <Text style={styles.emptyScheduleText}>Clique em Agendar Sala em “Ambientes”.</Text>
+            </View>
+          )
         )}
       </ScrollView>
 
@@ -428,7 +477,6 @@ const styles = StyleSheet.create({
   envName: { fontSize: 28, fontWeight: 'bold', color: '#1E293B' },
   envSub: { fontSize: 14, color: '#64748B' },
   
-  // Layout atualizado para os Cards
   metricsContainer: { gap: 12 },
   metricsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   metricsCenter: { alignItems: 'center' },
@@ -447,11 +495,10 @@ const styles = StyleSheet.create({
   statusMain: { fontSize: 20, fontWeight: 'bold', marginTop: 10 },
   statusDetail: { fontSize: 12, color: '#94A3B8', textAlign: 'center', marginTop: 5, lineHeight: 18 },
   
-  // Tabs atualizadas
   tabContainer: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4, marginVertical: 20 },
   tabItem: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
   tabActive: { backgroundColor: '#FFF', elevation: 2 },
-  tabText: { fontSize: 12, color: '#64748B', fontWeight: '600' }, // Diminuí um pouco a fonte para caber 3 itens
+  tabText: { fontSize: 12, color: '#64748B', fontWeight: '600' }, 
   tabTextActive: { color: '#1E293B' },
   
   chartStyle: { marginVertical: 10, borderRadius: 16, marginLeft: -10 },
@@ -468,7 +515,15 @@ const styles = StyleSheet.create({
   footerBrand: { fontSize: 15, fontWeight: 'bold' },
   footerStatus: { fontSize: 12, color: '#94A3B8' },
 
-  // Estilos da aba de Agendamentos
+  scheduleCard: { backgroundColor: '#FFF', borderRadius: 24, padding: 20, elevation: 3, marginBottom: 15 },
+  scheduleHeader: { flexDirection: 'row', alignItems: 'center' },
+  scheduleIconBox: { width: 50, height: 50, borderRadius: 12, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' },
+  scheduleTitle: { fontSize: 18, fontWeight: 'bold', color: '#1E293B' },
+  scheduleSubtitle: { fontSize: 13, color: '#64748B', marginTop: 2 },
+  scheduleFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  scheduleFooterItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  scheduleFooterText: { fontSize: 13, color: '#64748B', fontWeight: '500' },
+
   emptyScheduleCard: { backgroundColor: '#FFF', borderRadius: 24, padding: 30, alignItems: 'center', elevation: 2, marginVertical: 10 },
   emptyScheduleTitle: { fontSize: 16, fontWeight: 'bold', color: '#1E293B', marginBottom: 10, textAlign: 'center' },
   emptyScheduleText: { fontSize: 14, color: '#64748B', textAlign: 'center' },

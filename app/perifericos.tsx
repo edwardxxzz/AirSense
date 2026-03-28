@@ -314,18 +314,17 @@ export default function PerifericosScreen() {
           perifericos.map((p) => (
             <View key={`${p.ambienteId}-${p.id}`} style={{ zIndex: menuVisibleId === p.id ? 100 : 1 }}>
                 <PeripheralCard 
-                    title={p.nome} 
-                    subtitle={p.tipo} 
-                    location={p.localizacao}
-                    brand={p.marca}
-                    status={p.status}
-                    empresaId={empresaId}
-                    ambienteId={p.ambienteId}
-                    deviceType={p.tipo} 
-                    perifericoId={p.id} 
-                    icon={p.tipo.toLowerCase().includes('ar') ? <Snowflake color="#06B6D4" size={24}/> : <Sun color="#06B6D4" size={24}/>}
-                    onPress={() => router.push('/periferico')}
-                    onMore={() => setMenuVisibleId(menuVisibleId === p.id ? null : p.id)}
+                  title={p.nome} 
+                  subtitle={p.tipo} 
+                  location={p.localizacao}
+                  brand={p.marca}
+                  status={p.status}
+                  empresaId={empresaId}
+                  ambienteId={p.ambienteId}
+                  deviceType={p.tipo} 
+                  perifericoId={p.id} 
+                  icon={p.tipo.toLowerCase().includes('ar') ? <Snowflake color="#06B6D4" size={24}/> : <Sun color="#06B6D4" size={24}/>}
+                  onMore={() => setMenuVisibleId(menuVisibleId === p.id ? null : p.id)}
                 />
                 {menuVisibleId === p.id && (
                     <View style={styles.actionMenu}>
@@ -462,7 +461,7 @@ export default function PerifericosScreen() {
 
 // --- SUBCOMPONENTES ---
 
-function PeripheralCard({ title, subtitle, location, brand, icon, status, empresaId, ambienteId, deviceType, perifericoId, onPress, onMore }: any) {
+function PeripheralCard({ title, subtitle, location, brand, icon, status, empresaId, ambienteId, deviceType, perifericoId, onMore }: any) {
   const [loading, setLoading] = useState(false);
 
   const toggleSwitch = async () => {
@@ -485,7 +484,7 @@ function PeripheralCard({ title, subtitle, location, brand, icon, status, empres
   };
 
   return (
-    <Pressable style={styles.peripheralCard} onPress={onPress}>
+    <View style={styles.peripheralCard}>
       <View style={styles.peripheralHeader}>
         <View style={styles.peripheralInfoMain}>
           <View style={styles.peripheralIconBox}>{icon}</View>
@@ -514,7 +513,7 @@ function PeripheralCard({ title, subtitle, location, brand, icon, status, empres
           />
         </View>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -571,7 +570,7 @@ function TabItem({ icon, active, onPress }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   topAppBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 5, backgroundColor: '#FFF' },
-  topLogo: { width: 140, height: 60 },
+  topLogo: { width: 140, height: 90 },
   headerIcons: { flexDirection: 'row', alignItems: 'center', gap: 15 },
   iconBadge: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   avatarCircle: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center' },

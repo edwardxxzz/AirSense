@@ -125,7 +125,6 @@ export default function DashboardScreen() {
   const [formAndar, setFormAndar] = useState('');
 
   useEffect(() => {
-    let unsubConfig: (() => void) | undefined;
     let unsubAmbientes: (() => void) | undefined;
     let unsubHistorico: (() => void) | undefined;
 
@@ -146,14 +145,6 @@ export default function DashboardScreen() {
             const nomeEncontrado = dataUser.userName || "Usuário";
             const iniciais = nomeEncontrado.split(' ').filter((n: string) => n.length > 0).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
             setUserData({ nome: nomeEncontrado, email: user.email || "", iniciais });
-
-            // Listener Config (Medidores estáticos)
-            unsubConfig = onSnapshot(doc(db, "empresas", empresaId, "config", "geral"), (docSnap) => {
-              if (docSnap.exists()) {
-                const d = docSnap.data();
-                setMedias(prev => ({ ...prev, temp: d.temperatura_media || 0, co2: d.co2_medio || 0, qualidadeAr: d.qual_do_ar || 0 }));
-              }
-            });
 
             // Listener Ambientes
             unsubAmbientes = onSnapshot(collection(db, "empresas", empresaId, "ambientes"), (snap) => {
@@ -176,11 +167,12 @@ export default function DashboardScreen() {
                 }
               });
               setAmbientes(lista);
+              // Calcula a média de umidade baseada nos ambientes ativos
               const hMedia = lista.length > 0 ? Math.round(lista.reduce((acc, curr) => acc + curr.umidade, 0) / lista.length) : 0;
               setMedias(prev => ({ ...prev, hum: hMedia }));
             });
 
-            // Listener Histórico (Gráfico)
+            // Listener Histórico (Métricas Gerais e Gráfico)
             const historicoQuery = query(
               collection(db, "empresas", empresaId, "historico_geral"),
               orderBy("timestamp", "desc"),
@@ -189,11 +181,22 @@ export default function DashboardScreen() {
 
             unsubHistorico = onSnapshot(historicoQuery, (snap) => {
               if (!snap.empty) {
+                // 1. Atualiza os Cards Superiores usando o registro MAIS RECENTE (índice 0)
+                const latestDoc = snap.docs[0].data();
+                setMedias(prev => ({ 
+                  ...prev, 
+                  temp: latestDoc.temperatura_media || 0, 
+                  co2: latestDoc.co2_medio || 0, 
+                  qualidadeAr: latestDoc.qual_do_ar || 0 
+                }));
+
+                // 2. Atualiza o Gráfico invertendo a ordem para ficar cronológico (esq -> dir)
                 const docsData = snap.docs.map(d => d.data()).reverse();
 
                 const labels = docsData.map(d => d.hora || "--");
                 const temps = docsData.map(d => d.temperatura_media || 0);
-                const hums = docsData.map(d => d.umidade_media || d.indice_conforto || 0);
+                // Usando indice_conforto para a segunda linha do gráfico, conforme a imagem do BD
+                const hums = docsData.map(d => d.indice_conforto || 0); 
 
                 setChartDataState({ labels, temps, hums });
               }
@@ -206,7 +209,6 @@ export default function DashboardScreen() {
 
     return () => { 
       unsubscribeAuth(); 
-      if (unsubConfig) unsubConfig(); 
       if (unsubAmbientes) unsubAmbientes(); 
       if (unsubHistorico) unsubHistorico(); 
     };
@@ -282,7 +284,7 @@ export default function DashboardScreen() {
         strokeWidth: 3 
       }
     ],
-    legend: ["Temperatura", "Umidade"]
+    legend: ["Temperatura", "Índ. Conforto"]
   };
 
   return (
@@ -351,7 +353,6 @@ export default function DashboardScreen() {
               hum={`${item.umidade}%`}
               aqi={item.co2}
               icon={<LayoutGrid color="#0369A1" size={24}/>}
-              /* VARIÁVEIS DE ROTA CORRIGIDAS AQUI (nome e empresa em vez de nomeExibicao e empresaId) */
               onPress={() => router.push({ pathname: '/ambiente', params: { id: item.id, nome: item.nomeExibicao, empresa: userEmpresaId } })}
               onPressArrow={() => setMenuVisibleId(menuVisibleId === item.id ? null : item.id)}
             />
