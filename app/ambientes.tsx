@@ -22,7 +22,6 @@ import {
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router'; 
 
-// --- FIREBASE FIRESTORE MIGRATION ---
 import { auth, db } from '../services/firebaseConfig';
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { 
@@ -49,7 +48,6 @@ export default function AmbientesScreen() {
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
   
-  // Estados de Controle de UI
   const [isProfileVisible, setIsProfileVisible] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
@@ -61,7 +59,6 @@ export default function AmbientesScreen() {
   const [isLoading, setIsLoading] = useState(true); 
   const [isSelectAmbienteOpen, setIsSelectAmbienteOpen] = useState(false);
   
-  // Estados de Dados
   const [ambientes, setAmbientes] = useState<AmbienteData[]>([]);
   const [empresaId, setEmpresaId] = useState(''); 
   const [selectedAmbiente, setSelectedAmbiente] = useState<AmbienteData | null>(null);
@@ -71,14 +68,12 @@ export default function AmbientesScreen() {
     iniciais: '..' 
   });
 
-  // Estados do Formulário de Ambiente
   const [formNome, setFormNome] = useState('');
   const [formTipo, setFormTipo] = useState('');
   const [formArea, setFormArea] = useState('');
   const [formCapacidade, setFormCapacidade] = useState('');
   const [formAndar, setFormAndar] = useState('');
 
-  // Estados do Formulário de Agendamento
   const [formAgendamento, setFormAgendamento] = useState({
     ambienteId: '',
     nomeAmbiente: 'Selecione o ambiente',
@@ -130,10 +125,11 @@ export default function AmbientesScreen() {
               
               lista.push({
                 id: docAmb.id,
-                nomeExibicao: docAmb.id.replace(/_/g, ' '),
+                nomeExibicao: amb.dados?.nome || docAmb.id.replace(/_/g, ' '),
                 temperatura: sensores.temperatura !== undefined ? `${sensores.temperatura}°` : '--',
                 umidade: sensores.umidade !== undefined ? `${sensores.umidade}%` : '--',
-                co2: sensores.co2 !== undefined ? String(sensores.co2) : '--',
+                // ✅ AQI agora vem de sensores.AQI
+                co2: sensores.AQI !== undefined ? String(sensores.AQI) : '--',
                 tipo: amb.config?.tipo || amb.tipo || '',
                 area: amb.config?.area || amb.area || '',
                 capacidade: amb.config?.capacidade || amb.capacidade || '',
@@ -207,23 +203,21 @@ export default function AmbientesScreen() {
             temperatura: 0, 
             umidade: 0, 
             luminosidade: 0,
+            AQI: 0,
           },
         };
 
         await setDoc(novoAmbRef, payload);
 
-        // --- PASTA HISTÓRICO ---
         const historicoRef = collection(novoAmbRef, "historico");
         await setDoc(doc(historicoRef, "registro_inicial"), {
           timestamp: new Date().toISOString(),
           temperatura: 0,
           umidade: 0,
-          co2: 0,
-          luminosidade:0,
-          qualidade_ar: 100 
+          luminosidade: 0,
+          indice_conforto: 0 
         });
 
-        // --- PASTA PERIFÉRICOS ---
         const perifericosRef = collection(novoAmbRef, "perifericos");
         await setDoc(doc(perifericosRef, "ar_condicionado"), {
           geral: {
@@ -234,7 +228,6 @@ export default function AmbientesScreen() {
           }
         });
 
-        // --- PASTA AGENDAMENTOS ---
         const agendamentosRef = collection(novoAmbRef, "agendamentos");
         await setDoc(doc(agendamentosRef, "registro_inicial"), {
           timestamp: new Date().toISOString(),
@@ -297,9 +290,8 @@ export default function AmbientesScreen() {
     setMenuVisibleId(null);
   };
 
-  // --- FUNÇÃO DE EXCLUSÃO CORRIGIDA AQUI ---
   const handleDeleteAmbiente = (id: string) => {
-    setMenuVisibleId(null); // Oculta o menu primeiro
+    setMenuVisibleId(null);
     
     Alert.alert(
       "Excluir Ambiente", 
@@ -312,7 +304,6 @@ export default function AmbientesScreen() {
           onPress: async () => {
             if(!empresaId) return;
             try {
-              // Exclui o documento principal, o que faz ele sumir da tela instantaneamente
               await deleteDoc(doc(db, "empresas", empresaId, "ambientes", id));
               Alert.alert("Sucesso", "Ambiente excluído.");
             } catch (e) {
@@ -418,7 +409,7 @@ export default function AmbientesScreen() {
         <View style={{height: 100}} /> 
       </ScrollView>
 
-      {/* --- MODAL DE CRIAR/EDITAR AMBIENTE --- */}
+      {/* MODAL CRIAR/EDITAR AMBIENTE */}
       <Modal visible={isAdding} transparent animationType="fade" onRequestClose={() => setIsAdding(false)}>
         <View style={styles.modalOverlayBlack}>
           <View style={styles.formCard}>
@@ -474,7 +465,7 @@ export default function AmbientesScreen() {
         </View>
       </Modal>
 
-      {/* --- MODAL DE AGENDAR SALA --- */}
+      {/* MODAL AGENDAR SALA */}
       <Modal visible={isScheduling} transparent animationType="slide" onRequestClose={() => setIsScheduling(false)}>
         <View style={styles.modalOverlayBlack}>
           <View style={[styles.formCard, { paddingVertical: 35 }]}>
@@ -512,8 +503,7 @@ export default function AmbientesScreen() {
             <Text style={styles.label}>Título da Programação *</Text>
             <View style={styles.inputBox}>
               <TextInput 
-                style={styles.input} 
-                placeholder="Ex: Reunião" 
+                style={styles.input} placeholder="Ex: Reunião" 
                 value={formAgendamento.titulo} 
                 onChangeText={(t) => setFormAgendamento(prev => ({...prev, titulo: t}))} 
               />
@@ -522,8 +512,7 @@ export default function AmbientesScreen() {
             <Text style={styles.label}>Objetivo da Programação *</Text>
             <View style={styles.inputBox}>
               <TextInput 
-                style={styles.input} 
-                placeholder="Ex: Discutir sobre custos energéticos" 
+                style={styles.input} placeholder="Ex: Discutir sobre custos energéticos" 
                 value={formAgendamento.objetivo} 
                 onChangeText={(t) => setFormAgendamento(prev => ({...prev, objetivo: t}))} 
               />
@@ -534,8 +523,7 @@ export default function AmbientesScreen() {
                 <Text style={styles.label}>Data</Text>
                 <View style={styles.inputBox}>
                   <TextInput 
-                    style={styles.input} 
-                    placeholder="XX/XX/XXXX" 
+                    style={styles.input} placeholder="XX/XX/XXXX" 
                     value={formAgendamento.data} 
                     onChangeText={(t) => setFormAgendamento(prev => ({...prev, data: t}))} 
                   />
@@ -546,8 +534,7 @@ export default function AmbientesScreen() {
                 <Text style={styles.label}>Horário</Text>
                 <View style={styles.inputBox}>
                   <TextInput 
-                    style={styles.input} 
-                    placeholder="XX:XX" 
+                    style={styles.input} placeholder="XX:XX" 
                     value={formAgendamento.horario} 
                     onChangeText={(t) => setFormAgendamento(prev => ({...prev, horario: t}))} 
                   />
@@ -567,7 +554,7 @@ export default function AmbientesScreen() {
         </View>
       </Modal>
 
-      {/* --- MODAL DE PERFIL --- */}
+      {/* MODAL PERFIL */}
       <Modal animationType="fade" transparent={true} visible={isProfileVisible} onRequestClose={() => setIsProfileVisible(false)}>
         <View style={styles.modalOverlay}>
           <Pressable style={styles.modalBackdrop} onPress={() => setIsProfileVisible(false)} />
@@ -607,7 +594,6 @@ export default function AmbientesScreen() {
   );
 }
 
-// --- CARTÃO DE AMBIENTE ORIGINAL ---
 function RoomDetailCard({ name, type, temp, hum, aqi, icon, onPress, onPressArrow }: any) {
   return (
     <TouchableOpacity style={styles.roomCard} activeOpacity={0.8} onPress={onPress}>
@@ -629,7 +615,6 @@ function RoomDetailCard({ name, type, temp, hum, aqi, icon, onPress, onPressArro
   );
 }
 
-// --- SKELETON DO CARTÃO ORIGINAL ---
 function SkeletonCard() {
   const fadeAnim = useRef(new Animated.Value(0.5)).current;
 
@@ -680,21 +665,17 @@ const styles = StyleSheet.create({
   avatarCircle: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center' },
   avatarText: { color: '#FFF', fontWeight: 'bold', fontSize: 13 },
   scrollContent: { paddingHorizontal: 20, paddingTop: 15 },
-  
   headerSection: { marginBottom: 20 },
   headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#000' },
   headerSubtitle: { fontSize: 14, color: '#64748B' },
-  
   actionButtonsRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
   btnActionPrimary: { flex: 1, backgroundColor: '#2563EB', height: 48, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   btnActionPrimaryText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
   btnActionSecondary: { flex: 1, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#CBD5E1', height: 48, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   btnActionSecondaryText: { color: '#1E293B', fontWeight: 'bold', fontSize: 15 },
-  
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 12, paddingHorizontal: 15, height: 50, marginBottom: 25, borderWidth: 1, borderColor: '#E2E8F0', gap: 10 },
   searchContainerFocused: { borderColor: '#000', backgroundColor: '#FFF' },
   searchInput: { flex: 1, height: '90%', fontSize: 15, color: '#1E293B', outlineWidth: 0, outlineColor: "transparent" as any },
-  
   roomCard: { backgroundColor: '#F0F9FF', borderRadius: 24, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: '#BAE6FD' },
   roomHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   roomInfoMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -705,15 +686,12 @@ const styles = StyleSheet.create({
   metricBox: { flex: 1, backgroundColor: '#FFF', borderRadius: 16, paddingVertical: 12, alignItems: 'center', gap: 4, elevation: 1 },
   metricValue: { fontSize: 16, fontWeight: 'bold', color: '#1E293B' },
   metricLabel: { fontSize: 11, color: '#94A3B8', fontWeight: '600' },
-  
   actionMenu: { position: 'absolute', right: 30, top: 60, backgroundColor: '#FFF', borderRadius: 12, width: 130, elevation: 15, borderWidth: 1, borderColor: '#F1F5F9', padding: 5, zIndex: 999 },
   menuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 },
   menuText: { fontSize: 14, fontWeight: '500', color: '#475569' },
-
   bottomTab: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 75, backgroundColor: '#FFF', flexDirection: 'row', borderTopWidth: 1, borderColor: '#E2E8F0', paddingBottom: 15 },
   tabItem: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   activeIndicator: { position: 'absolute', bottom: 10, width: 4, height: 4, borderRadius: 2, backgroundColor: '#2563EB' },
-  
   modalOverlayBlack: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: 20 },
   formCard: { backgroundColor: '#FFF', borderRadius: 25, padding: 25 },
   formTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', color: '#000', marginBottom: 5 },
@@ -727,7 +705,6 @@ const styles = StyleSheet.create({
   btnCreateForm: { flex: 1, height: 50, borderRadius: 12, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center', marginLeft: 15 },
   btnCancelText: { color: '#64748B', fontWeight: 'bold' },
   btnCreateText: { color: '#FFF', fontWeight: 'bold' },
-
   dropdownContainer: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, marginTop: -15, marginBottom: 18, elevation: 2 },
   dropdownItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   dropdownText: { fontSize: 15, color: '#1E293B' },

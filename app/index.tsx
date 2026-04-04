@@ -84,14 +84,6 @@ export default function LoginScreen() {
           criadoEm: dataAtualIso
         });
 
-        // NOVA ESTRUTURA: Cria coleção 'config' > 'geral'
-        await setDoc(doc(db, "empresas", safeCompany, "config", "geral"), {
-          co2_medio: 30,
-          indice_conforto: 0,
-          qual_do_ar: 70,
-          temperatura_media: 0
-        });
-
         // NOVA ESTRUTURA: Cria coleção 'centrais' > 'macRPI'
         await setDoc(doc(db, "empresas", safeCompany, "centrais", "macRPI"), {
           ip_local: "",
@@ -104,12 +96,11 @@ export default function LoginScreen() {
         await addDoc(historicoRef, {
           timestamp: Date.now(),
           hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          co2_medio: 0,
           indice_conforto: 0,
           luminosidade: 0,
-          presenca: 0,
           qual_do_ar: 0,
-          temperatura_media: 0
+          temperatura_media: 0,
+          umidade:0
         });
 
         // NOVA ESTRUTURA: Cria coleção 'ambientes' > 'ambiente_1'
