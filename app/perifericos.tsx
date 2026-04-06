@@ -35,8 +35,10 @@ interface PerifericoData {
   tipo: string; 
   localizacao: string; 
   marca: string; 
+  subTipo?: string; // Usado para salvar o "tipo" quando é tomada
   capacidade?: string; 
-  status: boolean; 
+  estado_real: boolean; 
+  estado_desejado: boolean; 
   ambienteId: string;
 }
 
@@ -64,6 +66,7 @@ export default function PerifericosScreen() {
   const [formTipo, setFormTipo] = useState(''); // 'ar_condicionado' | 'tomada' | 'outro'
   const [formTipoCustom, setFormTipoCustom] = useState(''); // usado quando tipo = 'outro'
   const [formMarca, setFormMarca] = useState('');
+  const [formSubTipo, setFormSubTipo] = useState(''); // Usado no lugar de marca quando é tomada
   const [formCapacidade, setFormCapacidade] = useState(''); // capacidade (AC) ou IP (tomada)
   const [isSaving, setIsSaving] = useState(false);
 
@@ -118,12 +121,14 @@ export default function PerifericosScreen() {
             if (typeof value === 'object' && value !== null) {
               listaPerifericos.push({
                 id: key, 
-                nome: key.replace(/_/g, ' '), 
+                nome: value.nome || key.replace(/_/g, ' '), // Carrega o nome filho, se houver
                 tipo: deviceType, 
                 localizacao: ambNome,
                 marca: value.marca || "Genérico",
+                subTipo: value.tipo || "", // Se for tomada, foi salvo como 'tipo' em vez de 'marca'
                 capacidade: value.capacidade || value.ip || "",
-                status: value.status || false,
+                estado_real: value.estado_real || false,
+                estado_desejado: value.estado_desejado || false,
                 ambienteId: ambId
               });
             }
@@ -158,14 +163,18 @@ export default function PerifericosScreen() {
       const formattedDeviceTypeId = tipoFinal;
       const perDocRef = doc(db, "empresas", empresaId, "ambientes", formAmbienteId, "perifericos", formattedDeviceTypeId);
 
-      // Monta o payload conforme o tipo
-      let peripheralPayload: any = { status: isEditing && selectedPerif ? selectedPerif.status : false };
+      // Monta o payload conforme o tipo e salva nome e estados booleanos
+      let peripheralPayload: any = { 
+        nome: formattedPerNameId,
+        estado_real: isEditing && selectedPerif ? selectedPerif.estado_real : false,
+        estado_desejado: isEditing && selectedPerif ? selectedPerif.estado_desejado : false
+      };
 
       if (formTipo === 'ar_condicionado') {
         peripheralPayload.marca = formMarca || "Genérico";
         peripheralPayload.capacidade = formCapacidade || "";
       } else if (formTipo === 'tomada') {
-        peripheralPayload.marca = formMarca || "Genérico";
+        peripheralPayload.tipo = formSubTipo || "Genérico"; // Campo 'marca' substituído por 'tipo' na tomada
         peripheralPayload.ip = formCapacidade || ""; // capacidade vira ip
       } else {
         // outro — só marca
@@ -215,6 +224,7 @@ export default function PerifericosScreen() {
       setFormTipoCustom(item.tipo);
     }
     setFormMarca(item.marca);
+    setFormSubTipo(item.subTipo || '');
     setFormCapacidade(item.capacidade || '');
     setIsEditing(true);
     setIsAdding(true);
@@ -244,7 +254,8 @@ export default function PerifericosScreen() {
 
   const resetForm = () => {
     setFormNome(''); setFormAmbiente(''); setFormAmbienteId(''); 
-    setFormTipo(''); setFormTipoCustom(''); setFormMarca(''); setFormCapacidade('');
+    setFormTipo(''); setFormTipoCustom(''); setFormMarca(''); 
+    setFormSubTipo(''); setFormCapacidade('');
     setSelectedPerif(null); setIsEditing(false);
   };
 
@@ -289,8 +300,9 @@ export default function PerifericosScreen() {
           perifericos.map((p) => (
             <View key={`${p.ambienteId}-${p.id}`} style={{ zIndex: menuVisibleId === p.id ? 100 : 1 }}>
               <PeripheralCard 
-                title={p.nome} subtitle={p.tipo} location={p.localizacao} brand={p.marca}
-                status={p.status} empresaId={empresaId} ambienteId={p.ambienteId}
+                title={p.nome} subtitle={p.tipo} location={p.localizacao} 
+                brand={p.tipo === 'tomada' ? p.subTipo : p.marca} // Exibe o tipo digitado se for tomada
+                estadoDesejado={p.estado_desejado} empresaId={empresaId} ambienteId={p.ambienteId}
                 deviceType={p.tipo} perifericoId={p.id} 
                 icon={p.tipo.toLowerCase().includes('ar') ? <Snowflake color="#06B6D4" size={24}/> : <Sun color="#06B6D4" size={24}/>}
                 onMore={() => setMenuVisibleId(menuVisibleId === p.id ? null : p.id)}
@@ -336,7 +348,7 @@ export default function PerifericosScreen() {
                     <ChevronDown color="#64748B" size={20} />
                   </TouchableOpacity>
 
-                  <Text style={styles.label}>Tipo *</Text>
+                  <Text style={styles.label}>Tipo de Sistema *</Text>
                   <TouchableOpacity style={styles.inputBox} onPress={() => setShowTipoModal(true)}>
                     <Text style={[styles.inputText, !formTipo && {color: '#94A3B8'}]}>
                       {formTipo ? TIPOS_LABEL[formTipo] || formTipo : "Selecione o tipo"}
@@ -366,12 +378,17 @@ export default function PerifericosScreen() {
                   </View>
                 </>
               ) : (
-                // Marca + Capacidade/IP para ar_condicionado e tomada
+                // Marca (ou Tipo se for Tomada) + Capacidade/IP
                 <View style={styles.row}>
                   <View style={{flex: 1}}>
-                    <Text style={styles.label}>Marca</Text>
+                    <Text style={styles.label}>{formTipo === 'tomada' ? 'Tipo' : 'Marca'}</Text>
                     <View style={styles.inputBox}>
-                      <TextInput style={styles.input} placeholder="Ex: LG" value={formMarca} onChangeText={setFormMarca} />
+                      <TextInput 
+                        style={styles.input} 
+                        placeholder={formTipo === 'tomada' ? "Ex: 220v, 110v..." : "Ex: LG"} 
+                        value={formTipo === 'tomada' ? formSubTipo : formMarca} 
+                        onChangeText={formTipo === 'tomada' ? setFormSubTipo : setFormMarca} 
+                      />
                     </View>
                   </View>
                   <View style={{width: 15}} />
@@ -483,9 +500,9 @@ export default function PerifericosScreen() {
   );
 }
 
-// ✅ PeripheralCard com onSnapshot para update em tempo real
-function PeripheralCard({ title, subtitle, location, brand, icon, status, empresaId, ambienteId, deviceType, perifericoId, onMore }: any) {
-  const [localStatus, setLocalStatus] = useState(status);
+// ✅ PeripheralCard usando estado_desejado no liga/desliga
+function PeripheralCard({ title, subtitle, location, brand, icon, estadoDesejado, empresaId, ambienteId, deviceType, perifericoId, onMore }: any) {
+  const [localStatus, setLocalStatus] = useState(estadoDesejado);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -495,7 +512,8 @@ function PeripheralCard({ title, subtitle, location, brand, icon, status, empres
       if (snap.exists()) {
         const data = snap.data();
         if (data[perifericoId] !== undefined) {
-          setLocalStatus(data[perifericoId].status || false);
+          // Atualiza baseando-se no estado_desejado
+          setLocalStatus(data[perifericoId].estado_desejado || false);
         }
       }
     });
@@ -508,7 +526,8 @@ function PeripheralCard({ title, subtitle, location, brand, icon, status, empres
     try {
       const perDocRef = doc(db, "empresas", empresaId, "ambientes", ambienteId, "perifericos", deviceType);
       const updateData: any = {};
-      updateData[`${perifericoId}.status`] = !localStatus;
+      // Atualiza no banco o estado_desejado, em vez do antigo status
+      updateData[`${perifericoId}.estado_desejado`] = !localStatus;
       await updateDoc(perDocRef, updateData);
     } catch (error) {
       console.error(error);
@@ -647,22 +666,22 @@ const styles = StyleSheet.create({
   bottomTab: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 75, backgroundColor: '#FFF', flexDirection: 'row', borderTopWidth: 1, borderColor: '#E2E8F0', paddingBottom: 15 },
   tabItem: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   activeIndicator: { position: 'absolute', bottom: 10, width: 4, height: 4, borderRadius: 2, backgroundColor: '#2563EB' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row' },
-  modalBackdrop: { flex: 0.15 },
-  profileSheet: { flex: 0.85, backgroundColor: '#FFF', padding: 24, paddingTop: 60, borderTopLeftRadius: 30, borderBottomLeftRadius: 30 },
-  profileHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 },
-  profileTitle: { fontSize: 24, fontWeight: 'bold' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalBackdrop: { flex: 1 },
+  profileSheet: { backgroundColor: '#FFF', padding: 25, borderTopLeftRadius: 30, borderTopRightRadius: 30, position: 'absolute', bottom: 0, left: 0, right: 0 },
+  profileHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  profileTitle: { fontSize: 20, fontWeight: 'bold' },
   profileUserInfo: { alignItems: 'center', marginBottom: 20 },
-  largeAvatar: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#3B82F6', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
-  largeAvatarText: { color: '#FFF', fontSize: 30, fontWeight: 'bold' },
-  userName: { fontSize: 20, fontWeight: 'bold' },
+  largeAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  largeAvatarText: { fontSize: 32, color: '#FFF', fontWeight: 'bold' },
+  userName: { fontSize: 18, fontWeight: 'bold', color: '#1E293B' },
   userEmail: { fontSize: 14, color: '#64748B' },
-  separator: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 25 },
-  configItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  configItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  configIconBox: { width: 45, height: 45, backgroundColor: '#F8FAFC', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  configItemTitle: { fontSize: 16, fontWeight: '600' },
-  configItemSub: { fontSize: 12, color: '#94A3B8' },
-  btnSignOut: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: '#EF4444', borderRadius: 15, height: 55 },
-  btnSignOutText: { color: '#EF4444', fontWeight: 'bold', fontSize: 16 }
+  separator: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 15 },
+  configItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
+  configItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 15 },
+  configIconBox: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
+  configItemTitle: { fontSize: 16, fontWeight: '600', color: '#1E293B' },
+  configItemSub: { fontSize: 13, color: '#64748B' },
+  btnSignOut: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 15, borderRadius: 12, backgroundColor: '#FEF2F2' },
+  btnSignOutText: { fontSize: 16, fontWeight: 'bold', color: '#EF4444' }
 });
