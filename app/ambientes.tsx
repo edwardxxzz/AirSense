@@ -18,7 +18,7 @@ import {
 import { 
   Bell, Plus, Search, Thermometer, Droplets, Wind, LayoutGrid, 
   Building2, Zap, BarChart3, ChevronRight, FileText, X, User, LogOut,
-  Edit2, Trash2, ChevronDown, CalendarDays
+  Edit2, Trash2, ChevronDown, CalendarDays, Snowflake, Sun, Power, Check
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router'; 
 
@@ -78,10 +78,18 @@ export default function AmbientesScreen() {
     ambienteId: '',
     nomeAmbiente: 'Selecione o ambiente',
     titulo: '',
-    objetivo: '',
+    descricao: '',
+    perifericoId: '',
+    perifericoNome: 'Selecione o periférico',
+    perifericoTipo: '',
+    acao: '' as 'ligar' | 'desligar' | '',
+    acaoLabel: 'Selecione a ação',
     data: '',
     horario: ''
   });
+  const [perifericosDoAmbiente, setPerifericosDoAmbiente] = useState<any[]>([]);
+  const [isPerifericoDropdownOpen, setIsPerifericoDropdownOpen] = useState(false);
+  const [isAcaoDropdownOpen, setIsAcaoDropdownOpen] = useState(false);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
@@ -250,8 +258,8 @@ export default function AmbientesScreen() {
   };
 
   const handleSalvarAgendamento = async () => {
-    if (!formAgendamento.ambienteId || !formAgendamento.titulo || !formAgendamento.objetivo || !formAgendamento.data || !formAgendamento.horario) {
-      Alert.alert("Campos Obrigatórios", "Por favor, preencha todos os campos do agendamento.");
+    if (!formAgendamento.ambienteId || !formAgendamento.titulo || !formAgendamento.perifericoId || !formAgendamento.acao || !formAgendamento.data || !formAgendamento.horario) {
+      Alert.alert("Campos Obrigatórios", "Por favor, preencha todos os campos obrigatórios.");
       return;
     }
 
@@ -261,20 +269,54 @@ export default function AmbientesScreen() {
       
       await addDoc(agendamentosRef, {
         titulo: formAgendamento.titulo,
-        objetivo: formAgendamento.objetivo,
+        descricao: formAgendamento.descricao,
+        perifericoId: formAgendamento.perifericoId,
+        perifericoNome: formAgendamento.perifericoNome,
+        perifericoTipo: formAgendamento.perifericoTipo,
+        acao: formAgendamento.acao,
         data: formAgendamento.data,
         horario: formAgendamento.horario,
+        status: 'pendente',
         criadoEm: new Date().toISOString()
       });
 
       Alert.alert("Sucesso", "Agendamento criado com sucesso!");
       setIsScheduling(false);
-      setFormAgendamento({ ambienteId: '', nomeAmbiente: 'Selecione o ambiente', titulo: '', objetivo: '', data: '', horario: '' });
+      setFormAgendamento({ ambienteId: '', nomeAmbiente: 'Selecione o ambiente', titulo: '', descricao: '', perifericoId: '', perifericoNome: 'Selecione o periférico', perifericoTipo: '', acao: '', acaoLabel: 'Selecione a ação', data: '', horario: '' });
+      setPerifericosDoAmbiente([]);
     } catch (e) {
       console.error("Erro ao agendar:", e);
       Alert.alert("Erro", "Falha ao criar o agendamento.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const fetchPerifericosDoAmbiente = async (ambId: string) => {
+    if (!empresaId || !ambId) return;
+    try {
+      const perRef = collection(db, "empresas", empresaId, "ambientes", ambId, "perifericos");
+      const snap = await getDocs(perRef);
+      const lista: any[] = [];
+      snap.docs.forEach(docSnap => {
+        const tipoDocId = docSnap.id;
+        const data = docSnap.data();
+        Object.entries(data).forEach(([nomeChave, propriedades]: [string, any]) => {
+          if (nomeChave === 'tipo' || nomeChave === 'sensores') return;
+          if (tipoDocId === 'ar_condicionado' && nomeChave === 'geral') return;
+          if (typeof propriedades === 'object' && propriedades !== null) {
+            lista.push({
+              docId: tipoDocId,
+              nomeId: nomeChave,
+              nome: nomeChave.replace(/_/g, ' '),
+              tipo: tipoDocId.replace(/_/g, ' '),
+            });
+          }
+        });
+      });
+      setPerifericosDoAmbiente(lista);
+    } catch (e) {
+      console.error("Erro ao buscar periféricos:", e);
     }
   };
 
@@ -485,8 +527,9 @@ export default function AmbientesScreen() {
                       key={amb.id} 
                       style={styles.dropdownItem}
                       onPress={() => {
-                        setFormAgendamento(prev => ({ ...prev, ambienteId: amb.id, nomeAmbiente: amb.nomeExibicao }));
+                        setFormAgendamento(prev => ({ ...prev, ambienteId: amb.id, nomeAmbiente: amb.nomeExibicao, perifericoId: '', perifericoNome: 'Selecione o periférico', perifericoTipo: '' }));
                         setIsSelectAmbienteOpen(false);
+                        fetchPerifericosDoAmbiente(amb.id);
                       }}
                     >
                       <Text style={styles.dropdownText}>{amb.nomeExibicao}</Text>
@@ -496,30 +539,97 @@ export default function AmbientesScreen() {
               </View>
             )}
 
-            <Text style={styles.label}>Título da Programação *</Text>
+            <Text style={styles.label}>Título *</Text>
             <View style={styles.inputBox}>
               <TextInput 
-                style={styles.input} placeholder="Ex: Reunião" 
+                style={styles.input} placeholder="Ex: Climatização para reunião" 
                 value={formAgendamento.titulo} 
                 onChangeText={(t) => setFormAgendamento(prev => ({...prev, titulo: t}))} 
               />
             </View>
 
-            <Text style={styles.label}>Objetivo da Programação *</Text>
-            <View style={styles.inputBox}>
+            <Text style={styles.label}>Descrição</Text>
+            <View style={[styles.inputBox, { height: 65 }]}>
               <TextInput 
-                style={styles.input} placeholder="Ex: Discutir sobre custos energéticos" 
-                value={formAgendamento.objetivo} 
-                onChangeText={(t) => setFormAgendamento(prev => ({...prev, objetivo: t}))} 
+                style={[styles.input, { height: 55 }]} placeholder="Ex: Ligar ar-condicionado antes da reunião" 
+                value={formAgendamento.descricao} 
+                onChangeText={(t) => setFormAgendamento(prev => ({...prev, descricao: t}))}
+                multiline
               />
             </View>
 
+            <Text style={styles.label}>Periférico *</Text>
+            <TouchableOpacity 
+              style={[styles.inputBox, { justifyContent: 'space-between' }]}
+              onPress={() => { setIsPerifericoDropdownOpen(!isPerifericoDropdownOpen); setIsAcaoDropdownOpen(false); }}
+            >
+              <Text style={{ color: formAgendamento.perifericoId ? '#000' : '#94A3B8' }}>{formAgendamento.perifericoNome}</Text>
+              <ChevronDown color="#94A3B8" size={20} />
+            </TouchableOpacity>
+            {isPerifericoDropdownOpen && (
+              <View style={styles.dropdownContainer}>
+                <ScrollView nestedScrollEnabled style={{ maxHeight: 130 }}>
+                  {perifericosDoAmbiente.length > 0 ? perifericosDoAmbiente.map((p) => (
+                    <TouchableOpacity 
+                      key={`${p.docId}-${p.nomeId}`}
+                      style={[styles.dropdownItem, formAgendamento.perifericoId === p.nomeId && styles.dropdownItemActive]}
+                      onPress={() => {
+                        setFormAgendamento(prev => ({ ...prev, perifericoId: p.nomeId, perifericoNome: p.nome, perifericoTipo: p.docId }));
+                        setIsPerifericoDropdownOpen(false);
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        {p.docId?.toLowerCase().includes('ar') ? <Snowflake color="#06B6D4" size={16} /> : <Zap color="#F59E0B" size={16} />}
+                        <Text style={styles.dropdownText}>{p.nome}</Text>
+                      </View>
+                      {formAgendamento.perifericoId === p.nomeId && <Check color="#2563EB" size={18} />}
+                    </TouchableOpacity>
+                  )) : (
+                    <View style={styles.dropdownItem}>
+                      <Text style={[styles.dropdownText, { color: '#94A3B8' }]}>Selecione um ambiente primeiro</Text>
+                    </View>
+                  )}
+                </ScrollView>
+              </View>
+            )}
+
+            <Text style={styles.label}>Ação *</Text>
+            <TouchableOpacity 
+              style={[styles.inputBox, { justifyContent: 'space-between' }]}
+              onPress={() => { setIsAcaoDropdownOpen(!isAcaoDropdownOpen); setIsPerifericoDropdownOpen(false); }}
+            >
+              <Text style={{ color: formAgendamento.acao ? '#000' : '#94A3B8' }}>{formAgendamento.acaoLabel}</Text>
+              <ChevronDown color="#94A3B8" size={20} />
+            </TouchableOpacity>
+            {isAcaoDropdownOpen && (
+              <View style={styles.dropdownContainer}>
+                <TouchableOpacity 
+                  style={[styles.dropdownItem, formAgendamento.acao === 'ligar' && styles.dropdownItemActive]}
+                  onPress={() => { setFormAgendamento(prev => ({ ...prev, acao: 'ligar', acaoLabel: 'Ligar' })); setIsAcaoDropdownOpen(false); }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Power color="#10B981" size={16} /><Text style={styles.dropdownText}>Ligar</Text>
+                  </View>
+                  {formAgendamento.acao === 'ligar' && <Check color="#2563EB" size={18} />}
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.dropdownItem, formAgendamento.acao === 'desligar' && styles.dropdownItemActive]}
+                  onPress={() => { setFormAgendamento(prev => ({ ...prev, acao: 'desligar', acaoLabel: 'Desligar' })); setIsAcaoDropdownOpen(false); }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Power color="#EF4444" size={16} /><Text style={styles.dropdownText}>Desligar</Text>
+                  </View>
+                  {formAgendamento.acao === 'desligar' && <Check color="#2563EB" size={18} />}
+                </TouchableOpacity>
+              </View>
+            )}
+
             <View style={styles.row}>
               <View style={{flex: 1}}>
-                <Text style={styles.label}>Data</Text>
+                <Text style={styles.label}>Data *</Text>
                 <View style={styles.inputBox}>
                   <TextInput 
-                    style={styles.input} placeholder="XX/XX/XXXX" 
+                    style={styles.input} placeholder="DD/MM/AAAA" 
                     value={formAgendamento.data} 
                     onChangeText={(t) => setFormAgendamento(prev => ({...prev, data: t}))} 
                   />
@@ -527,10 +637,10 @@ export default function AmbientesScreen() {
               </View>
               <View style={{width: 15}} />
               <View style={{flex: 1}}>
-                <Text style={styles.label}>Horário</Text>
+                <Text style={styles.label}>Horário *</Text>
                 <View style={styles.inputBox}>
                   <TextInput 
-                    style={styles.input} placeholder="XX:XX" 
+                    style={styles.input} placeholder="HH:MM" 
                     value={formAgendamento.horario} 
                     onChangeText={(t) => setFormAgendamento(prev => ({...prev, horario: t}))} 
                   />
@@ -702,7 +812,8 @@ const styles = StyleSheet.create({
   btnCancelText: { color: '#64748B', fontWeight: 'bold' },
   btnCreateText: { color: '#FFF', fontWeight: 'bold' },
   dropdownContainer: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, marginTop: -15, marginBottom: 18, elevation: 2 },
-  dropdownItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  dropdownItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  dropdownItemActive: { backgroundColor: '#EFF6FF' },
   dropdownText: { fontSize: 15, color: '#1E293B' },
   // Modal perfil lateral direita
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row' },
