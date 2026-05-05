@@ -13,12 +13,14 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
-  Animated 
+  Animated,
+  Switch
 } from 'react-native';
 import { 
   Bell, Plus, Search, Thermometer, Droplets, Wind, LayoutGrid, 
   Building2, Zap, BarChart3, ChevronRight, FileText, X, User, LogOut,
-  Edit2, Trash2, ChevronDown, CalendarDays, Snowflake, Sun, Power, Check
+  Edit2, Trash2, ChevronDown, CalendarDays, Snowflake, Sun, Power, Check,
+  Calendar, Clock, MoreVertical
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router'; 
 
@@ -44,10 +46,27 @@ interface AmbienteData {
   andar?: string;
 }
 
+interface AgendamentoGeral {
+  id: string;
+  ambienteId: string;
+  ambienteNome: string;
+  titulo: string;
+  descricao: string;
+  perifericoId: string;
+  perifericoNome: string;
+  perifericoTipo: string;
+  acao: 'ligar' | 'desligar';
+  data: string;
+  horario: string;
+  status: 'pendente' | 'ativo' | 'concluido';
+  criadoEm: string;
+}
+
 export default function AmbientesScreen() {
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
   
+  const [mainTab, setMainTab] = useState<'ambientes' | 'agendamentos'>('ambientes');
   const [isProfileVisible, setIsProfileVisible] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
@@ -56,6 +75,7 @@ export default function AmbientesScreen() {
   const [searchText, setSearchText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
+  const [menuVisibleAgendId, setMenuVisibleAgendId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true); 
   const [isSelectAmbienteOpen, setIsSelectAmbienteOpen] = useState(false);
   
@@ -67,6 +87,8 @@ export default function AmbientesScreen() {
     email: '', 
     iniciais: '..' 
   });
+
+  const [agendamentosGeral, setAgendamentosGeral] = useState<AgendamentoGeral[]>([]);
 
   const [formNome, setFormNome] = useState('');
   const [formTipo, setFormTipo] = useState('');
@@ -90,6 +112,57 @@ export default function AmbientesScreen() {
   const [perifericosDoAmbiente, setPerifericosDoAmbiente] = useState<any[]>([]);
   const [isPerifericoDropdownOpen, setIsPerifericoDropdownOpen] = useState(false);
   const [isAcaoDropdownOpen, setIsAcaoDropdownOpen] = useState(false);
+
+  // Helper: check if a schedule is currently active (right day + time within a 30-min window)
+  const isScheduleActiveNow = (ag: AgendamentoGeral): boolean => {
+    if (ag.status === 'concluido') return false;
+    const now = new Date();
+    const todayStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+    if (ag.data !== todayStr) return false;
+    
+    const [schedH, schedM] = ag.horario.split(':').map(Number);
+    if (isNaN(schedH) || isNaN(schedM)) return false;
+    
+    const schedMinutes = schedH * 60 + schedM;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    
+    // Allow control within a 30-minute window from the scheduled time
+    return nowMinutes >= schedMinutes && nowMinutes <= schedMinutes + 30;
+  };
+
+  // Toggle peripheral from schedule card
+  const handleToggleScheduledPeripheral = async (ag: AgendamentoGeral, turnOn: boolean) => {
+    try {
+      const perDocRef = doc(db, "empresas", empresaId, "ambientes", ag.ambienteId, "perifericos", ag.perifericoTipo);
+      const updateData: any = {};
+      updateData[`${ag.perifericoId}.status`] = turnOn;
+      updateData[`${ag.perifericoId}.estado_desejado`] = turnOn;
+      await updateDoc(perDocRef, updateData);
+
+      // Update schedule status
+      const agDocRef = doc(db, "empresas", empresaId, "ambientes", ag.ambienteId, "agendamentos", ag.id);
+      await updateDoc(agDocRef, { status: turnOn ? 'ativo' : 'pendente' });
+    } catch (e) {
+      console.error("Erro ao controlar periférico:", e);
+      Alert.alert("Erro", "Falha ao controlar o periférico.");
+    }
+  };
+
+  // Delete schedule
+  const handleDeleteSchedule = (ag: AgendamentoGeral) => {
+    setMenuVisibleAgendId(null);
+    Alert.alert("Excluir Agendamento", `Deseja excluir "${ag.titulo}"?`, [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Excluir", style: "destructive", onPress: async () => {
+        try {
+          await deleteDoc(doc(db, "empresas", empresaId, "ambientes", ag.ambienteId, "agendamentos", ag.id));
+        } catch (e) {
+          console.error("Erro ao excluir agendamento:", e);
+          Alert.alert("Erro", "Falha ao excluir agendamento.");
+        }
+      }}
+    ]);
+  };
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
@@ -123,6 +196,7 @@ export default function AmbientesScreen() {
           const ambientesRef = collection(db, "empresas", foundEmpresaId, "ambientes");
           const unsubAmbientes = onSnapshot(ambientesRef, (snapshot) => {
             const lista: AmbienteData[] = [];
+            const ambNamesMap: Record<string, string> = {};
             
             snapshot.forEach((docAmb) => {
               const amb = docAmb.data();
@@ -130,10 +204,12 @@ export default function AmbientesScreen() {
               if (docAmb.id.toLowerCase() === 'ambiente_1') return;
 
               const sensores = amb.sensores || {};
+              const nomeExib = amb.dados?.nome || docAmb.id.replace(/_/g, ' ');
+              ambNamesMap[docAmb.id] = nomeExib;
               
               lista.push({
                 id: docAmb.id,
-                nomeExibicao: amb.dados?.nome || docAmb.id.replace(/_/g, ' '),
+                nomeExibicao: nomeExib,
                 temperatura: sensores.temperatura !== undefined ? `${sensores.temperatura}°` : '--',
                 umidade: sensores.umidade !== undefined ? `${sensores.umidade}%` : '--',
                 co2: sensores.AQI !== undefined ? String(sensores.AQI) : '--',
@@ -146,6 +222,47 @@ export default function AmbientesScreen() {
 
             setAmbientes(lista);
             setIsLoading(false); 
+
+            // Fetch all schedules from all ambientes
+            const fetchAllSchedules = async () => {
+              const allSchedules: AgendamentoGeral[] = [];
+              for (const ambId of Object.keys(ambNamesMap)) {
+                try {
+                  const ageRef = collection(db, "empresas", foundEmpresaId, "ambientes", ambId, "agendamentos");
+                  const ageSnap = await getDocs(ageRef);
+                  ageSnap.forEach(docSnap => {
+                    if (docSnap.id === 'registro_inicial') return;
+                    const data = docSnap.data();
+                    allSchedules.push({
+                      id: docSnap.id,
+                      ambienteId: ambId,
+                      ambienteNome: ambNamesMap[ambId] || ambId,
+                      titulo: data.titulo || 'Sem Título',
+                      descricao: data.descricao || '',
+                      perifericoId: data.perifericoId || '',
+                      perifericoNome: data.perifericoNome || 'Periférico',
+                      perifericoTipo: data.perifericoTipo || '',
+                      acao: data.acao || 'ligar',
+                      data: data.data || '--/--/----',
+                      horario: data.horario || '--:--',
+                      status: data.status || 'pendente',
+                      criadoEm: data.criadoEm || '',
+                    });
+                  });
+                } catch (e) {
+                  console.error(`Erro ao buscar agendamentos do ambiente ${ambId}:`, e);
+                }
+              }
+              // Sort: pending first, then active, then completed
+              allSchedules.sort((a, b) => {
+                const statusOrder = { pendente: 0, ativo: 1, concluido: 2 };
+                const statusDiff = (statusOrder[a.status] ?? 2) - (statusOrder[b.status] ?? 2);
+                if (statusDiff !== 0) return statusDiff;
+                return a.data.localeCompare(b.data) || a.horario.localeCompare(b.horario);
+              });
+              setAgendamentosGeral(allSchedules);
+            };
+            fetchAllSchedules();
           });
 
           return () => unsubAmbientes();
@@ -373,6 +490,24 @@ export default function AmbientesScreen() {
     amb.nomeExibicao.toLowerCase().includes(searchText.toLowerCase())
   );
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pendente': return '#F59E0B';
+      case 'ativo': return '#2563EB';
+      case 'concluido': return '#10B981';
+      default: return '#94A3B8';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'pendente': return 'Pendente';
+      case 'ativo': return 'Ativo';
+      case 'concluido': return 'Concluído';
+      default: return status;
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topAppBar}>
@@ -393,59 +528,211 @@ export default function AmbientesScreen() {
           <Text style={styles.headerSubtitle}>Gerencie seus locais monitorados</Text>
         </View>
 
-        <View style={styles.actionButtonsRow}>
-          <TouchableOpacity style={styles.btnActionPrimary} onPress={() => { resetForm(); setIsAdding(true); }}>
-            <Plus color="#FFF" size={20} />
-            <Text style={styles.btnActionPrimaryText}>Novo Ambiente</Text>
+        {/* Main Tabs: Ambientes / Agendamentos */}
+        <View style={styles.mainTabContainer}>
+          <TouchableOpacity 
+            style={[styles.mainTabItem, mainTab === 'ambientes' && styles.mainTabActive]} 
+            onPress={() => setMainTab('ambientes')}
+          >
+            <Building2 color={mainTab === 'ambientes' ? '#2563EB' : '#64748B'} size={18} />
+            <Text style={[styles.mainTabText, mainTab === 'ambientes' && styles.mainTabTextActive]}>Ambientes</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.btnActionSecondary} onPress={() => setIsScheduling(true)}>
-            <CalendarDays color="#1E293B" size={20} />
-            <Text style={styles.btnActionSecondaryText}>Agendar Sala</Text>
+          <TouchableOpacity 
+            style={[styles.mainTabItem, mainTab === 'agendamentos' && styles.mainTabActive]} 
+            onPress={() => setMainTab('agendamentos')}
+          >
+            <CalendarDays color={mainTab === 'agendamentos' ? '#2563EB' : '#64748B'} size={18} />
+            <Text style={[styles.mainTabText, mainTab === 'agendamentos' && styles.mainTabTextActive]}>Agendamentos</Text>
           </TouchableOpacity>
         </View>
 
-        <Pressable style={[styles.searchContainer, isFocused && styles.searchContainerFocused]} onPress={() => inputRef.current?.focus()}>
-          <Search color={isFocused ? "#000" : "#64748B"} size={20} />
-          <TextInput 
-            ref={inputRef} style={styles.searchInput} placeholder="Buscar ambiente..." 
-            placeholderTextColor="#94A3B8" value={searchText} onChangeText={setSearchText}
-            onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)}
-          />
-        </Pressable>
-
-        {isLoading ? (
-          [1, 2, 3, 4].map((item) => <SkeletonCard key={item} />)
-        ) : ambientesFiltrados.length > 0 ? (
-          ambientesFiltrados.map((item) => (
-            <View key={item.id} style={{ zIndex: menuVisibleId === item.id ? 100 : 1 }}>
-              <RoomDetailCard 
-                name={item.nomeExibicao} 
-                type={item.tipo || "Monitorado"} 
-                temp={item.temperatura} hum={item.umidade} aqi={item.co2} 
-                icon={item.tipo?.includes('Escritório') ? <Building2 color="#0369A1" size={22}/> : <LayoutGrid color="#0369A1" size={22}/>} 
-                onPress={() => router.push({
-                  pathname: '/ambiente',
-                  params: { id: item.id, nome: item.nomeExibicao, empresa: empresaId }
-                })}
-                onPressArrow={() => setMenuVisibleId(menuVisibleId === item.id ? null : item.id)}
-              />
-              
-              {menuVisibleId === item.id && (
-                <View style={styles.actionMenu}>
-                  <TouchableOpacity style={styles.menuItem} onPress={() => handleOpenEdit(item)}>
-                    <Edit2 size={16} color="#475569" /><Text style={styles.menuText}>Editar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.menuItem} onPress={() => handleDeleteAmbiente(item.id)}>
-                    <Trash2 size={16} color="#EF4444" /><Text style={[styles.menuText, {color: '#EF4444'}]}>Excluir</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+        {/* ==================== TAB: AMBIENTES ==================== */}
+        {mainTab === 'ambientes' && (
+          <>
+            <View style={styles.actionButtonsRow}>
+              <TouchableOpacity style={styles.btnActionPrimary} onPress={() => { resetForm(); setIsAdding(true); }}>
+                <Plus color="#FFF" size={20} />
+                <Text style={styles.btnActionPrimaryText}>Novo Ambiente</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnActionSecondary} onPress={() => setIsScheduling(true)}>
+                <CalendarDays color="#1E293B" size={20} />
+                <Text style={styles.btnActionSecondaryText}>Agendar Sala</Text>
+              </TouchableOpacity>
             </View>
-          ))
-        ) : (
-          <View style={{ alignItems: 'center', marginTop: 40 }}>
-            <Text style={{ color: '#94A3B8' }}>Nenhum ambiente encontrado.</Text>
-          </View>
+
+            <Pressable style={[styles.searchContainer, isFocused && styles.searchContainerFocused]} onPress={() => inputRef.current?.focus()}>
+              <Search color={isFocused ? "#000" : "#64748B"} size={20} />
+              <TextInput 
+                ref={inputRef} style={styles.searchInput} placeholder="Buscar ambiente..." 
+                placeholderTextColor="#94A3B8" value={searchText} onChangeText={setSearchText}
+                onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)}
+              />
+            </Pressable>
+
+            {isLoading ? (
+              [1, 2, 3, 4].map((item) => <SkeletonCard key={item} />)
+            ) : ambientesFiltrados.length > 0 ? (
+              ambientesFiltrados.map((item) => (
+                <View key={item.id} style={{ zIndex: menuVisibleId === item.id ? 100 : 1 }}>
+                  <RoomDetailCard 
+                    name={item.nomeExibicao} 
+                    type={item.tipo || "Monitorado"} 
+                    temp={item.temperatura} hum={item.umidade} aqi={item.co2} 
+                    icon={item.tipo?.includes('Escritório') ? <Building2 color="#0369A1" size={22}/> : <LayoutGrid color="#0369A1" size={22}/>} 
+                    onPress={() => router.push({
+                      pathname: '/ambiente',
+                      params: { id: item.id, nome: item.nomeExibicao, empresa: empresaId }
+                    })}
+                    onPressArrow={() => setMenuVisibleId(menuVisibleId === item.id ? null : item.id)}
+                  />
+                  
+                  {menuVisibleId === item.id && (
+                    <View style={styles.actionMenu}>
+                      <TouchableOpacity style={styles.menuItem} onPress={() => handleOpenEdit(item)}>
+                        <Edit2 size={16} color="#475569" /><Text style={styles.menuText}>Editar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.menuItem} onPress={() => handleDeleteAmbiente(item.id)}>
+                        <Trash2 size={16} color="#EF4444" /><Text style={[styles.menuText, {color: '#EF4444'}]}>Excluir</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              ))
+            ) : (
+              <View style={{ alignItems: 'center', marginTop: 40 }}>
+                <Text style={{ color: '#94A3B8' }}>Nenhum ambiente encontrado.</Text>
+              </View>
+            )}
+          </>
+        )}
+
+        {/* ==================== TAB: AGENDAMENTOS ==================== */}
+        {mainTab === 'agendamentos' && (
+          <>
+            <TouchableOpacity style={styles.btnNewSchedule} onPress={() => setIsScheduling(true)}>
+              <Plus color="#FFF" size={20} />
+              <Text style={styles.btnNewScheduleText}>Novo Agendamento</Text>
+            </TouchableOpacity>
+
+            {agendamentosGeral.length > 0 ? (
+              agendamentosGeral.map((ag) => {
+                const isActiveNow = isScheduleActiveNow(ag);
+                return (
+                  <View key={`${ag.ambienteId}-${ag.id}`} style={{ zIndex: menuVisibleAgendId === ag.id ? 100 : 1 }}>
+                    <View style={[styles.scheduleCard, isActiveNow && styles.scheduleCardActive]}>
+                      {/* Header: Title + Status Badge + Menu */}
+                      <View style={styles.scheduleHeader}>
+                        <View style={styles.scheduleIconBox}>
+                          <Calendar color="#3B82F6" size={20} />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <Text style={styles.scheduleTitle} numberOfLines={1}>{ag.titulo}</Text>
+                            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(ag.status) + '18' }]}>
+                              <Text style={[styles.statusBadgeText, { color: getStatusColor(ag.status) }]}>{getStatusLabel(ag.status)}</Text>
+                            </View>
+                          </View>
+                          {ag.descricao ? <Text style={styles.scheduleSubtitle} numberOfLines={2}>{ag.descricao}</Text> : null}
+                        </View>
+                        <TouchableOpacity 
+                          onPress={() => setMenuVisibleAgendId(menuVisibleAgendId === ag.id ? null : ag.id)} 
+                          style={{ padding: 6 }}
+                        >
+                          <MoreVertical color="#94A3B8" size={20} />
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.cardSeparator} />
+
+                      {/* Environment info */}
+                      <View style={styles.scheduleInfoRow}>
+                        <View style={styles.scheduleInfoIconBox}>
+                          <Building2 color="#2563EB" size={14} />
+                        </View>
+                        <Text style={styles.scheduleInfoLabel}>Sala:</Text>
+                        <Text style={styles.scheduleInfoValue}>{ag.ambienteNome}</Text>
+                      </View>
+
+                      {/* Peripheral info */}
+                      <View style={styles.scheduleInfoRow}>
+                        <View style={styles.scheduleInfoIconBox}>
+                          {ag.perifericoTipo?.toLowerCase().includes('ar') 
+                            ? <Snowflake color="#06B6D4" size={14} />
+                            : <Zap color="#F59E0B" size={14} />
+                          }
+                        </View>
+                        <Text style={styles.scheduleInfoLabel}>Periférico:</Text>
+                        <Text style={styles.scheduleInfoValue}>{ag.perifericoNome}</Text>
+                        <View style={[styles.acaoBadge, { backgroundColor: ag.acao === 'ligar' ? '#DCFCE7' : '#FEE2E2' }]}>
+                          <Power color={ag.acao === 'ligar' ? '#16A34A' : '#DC2626'} size={12} />
+                          <Text style={[styles.acaoBadgeText, { color: ag.acao === 'ligar' ? '#16A34A' : '#DC2626' }]}>
+                            {ag.acao === 'ligar' ? 'Ligar' : 'Desligar'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Date & Time */}
+                      <View style={styles.scheduleFooter}>
+                        <View style={styles.scheduleFooterItem}>
+                          <Calendar size={14} color="#64748B" />
+                          <Text style={styles.scheduleFooterText}>{ag.data}</Text>
+                        </View>
+                        <View style={styles.scheduleFooterItem}>
+                          <Clock size={14} color="#64748B" />
+                          <Text style={styles.scheduleFooterText}>{ag.horario}</Text>
+                        </View>
+                      </View>
+
+                      {/* Control switch - only enabled when schedule is active now */}
+                      {isActiveNow && (
+                        <View style={styles.scheduleControlRow}>
+                          <Text style={styles.scheduleControlLabel}>Controlar agora:</Text>
+                          <TouchableOpacity 
+                            style={[styles.controlBtn, { backgroundColor: ag.acao === 'ligar' ? '#10B981' : '#EF4444' }]}
+                            onPress={() => handleToggleScheduledPeripheral(ag, ag.acao === 'ligar')}
+                          >
+                            <Power color="#FFF" size={16} />
+                            <Text style={styles.controlBtnText}>{ag.acao === 'ligar' ? 'Ligar' : 'Desligar'}</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {!isActiveNow && ag.status === 'pendente' && (
+                        <View style={styles.scheduleInactiveNote}>
+                          <Clock color="#94A3B8" size={14} />
+                          <Text style={styles.scheduleInactiveText}>Controle disponível no horário agendado</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Action Menu */}
+                    {menuVisibleAgendId === ag.id && (
+                      <View style={styles.actionMenu}>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => {
+                          setMenuVisibleAgendId(null);
+                          router.push({
+                            pathname: '/ambiente',
+                            params: { id: ag.ambienteId, nome: ag.ambienteNome, empresa: empresaId }
+                          });
+                        }}>
+                          <Building2 size={16} color="#475569" /><Text style={styles.menuText}>Ver Ambiente</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.menuItem} onPress={() => handleDeleteSchedule(ag)}>
+                          <Trash2 size={16} color="#EF4444" /><Text style={[styles.menuText, {color: '#EF4444'}]}>Excluir</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              })
+            ) : (
+              <View style={styles.emptyScheduleCard}>
+                <CalendarDays color="#94A3B8" size={48} />
+                <Text style={styles.emptyScheduleTitle}>Nenhum agendamento no momento</Text>
+                <Text style={styles.emptyScheduleText}>Crie um agendamento para controlar periféricos automaticamente.</Text>
+              </View>
+            )}
+          </>
         )}
         
         <View style={{height: 100}} /> 
@@ -774,6 +1061,13 @@ const styles = StyleSheet.create({
   headerSection: { marginBottom: 20 },
   headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#000' },
   headerSubtitle: { fontSize: 14, color: '#64748B' },
+  // Main tabs
+  mainTabContainer: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4, marginBottom: 20 },
+  mainTabItem: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 10 },
+  mainTabActive: { backgroundColor: '#FFF', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 3 },
+  mainTabText: { fontSize: 14, fontWeight: '600', color: '#64748B' },
+  mainTabTextActive: { color: '#2563EB' },
+  // Action buttons
   actionButtonsRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
   btnActionPrimary: { flex: 1, backgroundColor: '#2563EB', height: 48, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   btnActionPrimaryText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
@@ -792,12 +1086,44 @@ const styles = StyleSheet.create({
   metricBox: { flex: 1, backgroundColor: '#FFF', borderRadius: 16, paddingVertical: 12, alignItems: 'center', gap: 4, elevation: 1 },
   metricValue: { fontSize: 16, fontWeight: 'bold', color: '#1E293B' },
   metricLabel: { fontSize: 11, color: '#94A3B8', fontWeight: '600' },
-  actionMenu: { position: 'absolute', right: 30, top: 60, backgroundColor: '#FFF', borderRadius: 12, width: 130, elevation: 15, borderWidth: 1, borderColor: '#F1F5F9', padding: 5, zIndex: 999 },
+  actionMenu: { position: 'absolute', right: 30, top: 60, backgroundColor: '#FFF', borderRadius: 12, width: 150, elevation: 15, borderWidth: 1, borderColor: '#F1F5F9', padding: 5, zIndex: 999 },
   menuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 },
   menuText: { fontSize: 14, fontWeight: '500', color: '#475569' },
+  // Schedule styles
+  btnNewSchedule: { backgroundColor: '#2563EB', height: 48, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 },
+  btnNewScheduleText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
+  scheduleCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 18, marginBottom: 14, borderWidth: 1, borderColor: '#F1F5F9', elevation: 2 },
+  scheduleCardActive: { borderColor: '#93C5FD', borderWidth: 2, backgroundColor: '#F0F9FF' },
+  scheduleHeader: { flexDirection: 'row', alignItems: 'flex-start' },
+  scheduleIconBox: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' },
+  scheduleTitle: { fontSize: 15, fontWeight: 'bold', color: '#1E293B', flex: 1 },
+  scheduleSubtitle: { fontSize: 12, color: '#64748B', marginTop: 2, lineHeight: 17 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  statusBadgeText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+  cardSeparator: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 12 },
+  scheduleInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  scheduleInfoIconBox: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center' },
+  scheduleInfoLabel: { fontSize: 13, color: '#64748B', fontWeight: '500' },
+  scheduleInfoValue: { fontSize: 13, color: '#1E293B', fontWeight: '600', flex: 1 },
+  acaoBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  acaoBadgeText: { fontSize: 11, fontWeight: '700' },
+  scheduleFooter: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 4 },
+  scheduleFooterItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  scheduleFooterText: { fontSize: 13, color: '#64748B', fontWeight: '500' },
+  scheduleControlRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#DBEAFE' },
+  scheduleControlLabel: { fontSize: 13, fontWeight: '600', color: '#1E293B' },
+  controlBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
+  controlBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 13 },
+  scheduleInactiveNote: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  scheduleInactiveText: { fontSize: 12, color: '#94A3B8', fontStyle: 'italic' },
+  emptyScheduleCard: { backgroundColor: '#FFF', borderRadius: 24, padding: 40, alignItems: 'center', elevation: 2, marginVertical: 10 },
+  emptyScheduleTitle: { fontSize: 16, fontWeight: 'bold', color: '#1E293B', marginBottom: 8, textAlign: 'center', marginTop: 12 },
+  emptyScheduleText: { fontSize: 14, color: '#64748B', textAlign: 'center', lineHeight: 20 },
+  // Bottom tab
   bottomTab: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 75, backgroundColor: '#FFF', flexDirection: 'row', borderTopWidth: 1, borderColor: '#E2E8F0', paddingBottom: 15 },
   tabItem: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   activeIndicator: { position: 'absolute', bottom: 10, width: 4, height: 4, borderRadius: 2, backgroundColor: '#2563EB' },
+  // Modals
   modalOverlayBlack: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: 20 },
   formCard: { backgroundColor: '#FFF', borderRadius: 25, padding: 25 },
   formTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', color: '#000', marginBottom: 5 },

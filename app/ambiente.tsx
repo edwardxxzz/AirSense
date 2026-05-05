@@ -384,6 +384,41 @@ export default function AmbienteDetalhes() {
       : <Power color="#EF4444" size={16} />;
   };
 
+  // Check if a schedule is currently active (right day + time within a 30-min window)
+  const isScheduleActiveNow = (ag: AgendamentoData): boolean => {
+    if (ag.status === 'concluido') return false;
+    const now = new Date();
+    const todayStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+    if (ag.data !== todayStr) return false;
+    
+    const [schedH, schedM] = ag.horario.split(':').map(Number);
+    if (isNaN(schedH) || isNaN(schedM)) return false;
+    
+    const schedMinutes = schedH * 60 + schedM;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    
+    // Allow control within a 30-minute window from the scheduled time
+    return nowMinutes >= schedMinutes && nowMinutes <= schedMinutes + 30;
+  };
+
+  // Toggle peripheral from schedule card in ambiente detail
+  const handleToggleScheduledPeripheral = async (ag: AgendamentoData, turnOn: boolean) => {
+    try {
+      const perDocRef = doc(db, "empresas", String(empresa), "ambientes", String(id), "perifericos", ag.perifericoTipo);
+      const updateData: any = {};
+      updateData[`${ag.perifericoId}.status`] = turnOn;
+      updateData[`${ag.perifericoId}.estado_desejado`] = turnOn;
+      await updateDoc(perDocRef, updateData);
+
+      // Update schedule status
+      const agDocRef = doc(db, "empresas", String(empresa), "ambientes", String(id), "agendamentos", ag.id);
+      await updateDoc(agDocRef, { status: turnOn ? 'ativo' : 'pendente' });
+    } catch (e) {
+      console.error("Erro ao controlar periférico:", e);
+      Alert.alert("Erro", "Falha ao controlar o periférico.");
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topAppBar}>
@@ -524,7 +559,7 @@ export default function AmbienteDetalhes() {
             {agendamentosList.length > 0 ? (
               agendamentosList.map((ag) => (
                 <View key={ag.id} style={{ zIndex: menuVisibleAgendId === ag.id ? 100 : 1 }}>
-                  <View style={styles.scheduleCard}>
+                  <View style={[styles.scheduleCard, isScheduleActiveNow(ag) && styles.scheduleCardActive]}>
                     {/* Header: Title + Status Badge + Menu */}
                     <View style={styles.scheduleHeader}>
                       <View style={styles.scheduleIconBox}>
@@ -578,6 +613,27 @@ export default function AmbienteDetalhes() {
                         <Text style={styles.scheduleFooterText}>{ag.horario}</Text>
                       </View>
                     </View>
+
+                    {/* Control button - only when schedule is active now */}
+                    {isScheduleActiveNow(ag) && (
+                      <View style={styles.scheduleControlRow}>
+                        <Text style={styles.scheduleControlLabel}>Controlar agora:</Text>
+                        <TouchableOpacity 
+                          style={[styles.controlBtn, { backgroundColor: ag.acao === 'ligar' ? '#10B981' : '#EF4444' }]}
+                          onPress={() => handleToggleScheduledPeripheral(ag, ag.acao === 'ligar')}
+                        >
+                          <Power color="#FFF" size={16} />
+                          <Text style={styles.controlBtnText}>{ag.acao === 'ligar' ? 'Ligar' : 'Desligar'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    {!isScheduleActiveNow(ag) && ag.status === 'pendente' && (
+                      <View style={styles.scheduleInactiveNote}>
+                        <Clock color="#94A3B8" size={14} />
+                        <Text style={styles.scheduleInactiveText}>Controle disponível no horário agendado</Text>
+                      </View>
+                    )}
                   </View>
 
                   {/* Action Menu */}
@@ -912,6 +968,7 @@ const styles = StyleSheet.create({
   btnAddSchedule: { backgroundColor: '#2563EB', height: 48, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 },
   btnAddScheduleText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
   scheduleCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 18, elevation: 3, marginBottom: 14, borderWidth: 1, borderColor: '#F1F5F9' },
+  scheduleCardActive: { borderColor: '#93C5FD', borderWidth: 2, backgroundColor: '#F0F9FF' },
   scheduleHeader: { flexDirection: 'row', alignItems: 'flex-start' },
   scheduleIconBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' },
   scheduleTitle: { fontSize: 16, fontWeight: 'bold', color: '#1E293B', flex: 1 },
@@ -930,6 +987,12 @@ const styles = StyleSheet.create({
   emptyScheduleCard: { backgroundColor: '#FFF', borderRadius: 24, padding: 40, alignItems: 'center', elevation: 2, marginVertical: 10 },
   emptyScheduleTitle: { fontSize: 16, fontWeight: 'bold', color: '#1E293B', marginBottom: 8, textAlign: 'center', marginTop: 12 },
   emptyScheduleText: { fontSize: 14, color: '#64748B', textAlign: 'center', lineHeight: 20 },
+  scheduleControlRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#DBEAFE' },
+  scheduleControlLabel: { fontSize: 13, fontWeight: '600', color: '#1E293B' },
+  controlBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
+  controlBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 13 },
+  scheduleInactiveNote: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  scheduleInactiveText: { fontSize: 12, color: '#94A3B8', fontStyle: 'italic' },
   // Modal schedule form
   modalOverlayBlack: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: 20 },
   formCard: { backgroundColor: '#FFF', borderRadius: 25, padding: 25, maxHeight: '90%' },
