@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 import { auth, db } from '../services/firebaseConfig';
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { 
-  collection, doc, getDocs, setDoc, updateDoc, onSnapshot,
+  collection, doc, getDocs, getDoc, setDoc, updateDoc, onSnapshot,
   query, where, collectionGroup 
 } from "firebase/firestore";
 
@@ -239,10 +239,9 @@ export default function PerifericosScreen() {
         if (!empresaId) return;
         try {
           const perDocRef = doc(db, "empresas", empresaId, "ambientes", item.ambienteId, "perifericos", item.tipo);
-          const docSnap = await getDocs(collection(db, "empresas", empresaId, "ambientes", item.ambienteId, "perifericos"));
-          const docRef = docSnap.docs.find(d => d.id === item.tipo);
-          if (docRef && docRef.exists()) {
-            const data = docRef.data();
+          const docSnap = await getDoc(perDocRef);
+          if (docSnap.exists()) {
+            const data = { ...docSnap.data() };
             delete data[item.id]; 
             await setDoc(perDocRef, data); 
             carregarDados(empresaId);

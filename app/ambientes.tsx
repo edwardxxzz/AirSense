@@ -454,7 +454,7 @@ export default function AmbientesScreen() {
     
     Alert.alert(
       "Excluir Ambiente", 
-      "Deseja realmente excluir este ambiente?", 
+      "Deseja realmente excluir este ambiente e todos os seus dados?", 
       [
         { text: "Cancelar", style: "cancel" },
         { 
@@ -463,7 +463,16 @@ export default function AmbientesScreen() {
           onPress: async () => {
             if(!empresaId) return;
             try {
-              await deleteDoc(doc(db, "empresas", empresaId, "ambientes", id));
+              const ambRef = doc(db, "empresas", empresaId, "ambientes", id);
+              // Deletar subcoleções primeiro
+              const subcollections = ['perifericos', 'agendamentos', 'historico'];
+              for (const sub of subcollections) {
+                const subSnap = await getDocs(collection(ambRef, sub));
+                for (const subDoc of subSnap.docs) {
+                  await deleteDoc(subDoc.ref);
+                }
+              }
+              await deleteDoc(ambRef);
               Alert.alert("Sucesso", "Ambiente excluído.");
             } catch (e) {
               console.error("Erro ao excluir:", e);
@@ -996,7 +1005,7 @@ function RoomDetailCard({ name, type, temp, hum, aqi, icon, onPress, onPressArro
           <View><Text style={styles.roomName}>{name}</Text><Text style={styles.roomType}>{type}</Text></View>
         </View>
         <TouchableOpacity onPress={onPressArrow} style={{padding: 10}}>
-          <ChevronDown color="#1E293B" size={22} />
+          <MoreVertical color="#1E293B" size={22} />
         </TouchableOpacity>
       </View>
       <View style={styles.metricsRow}>

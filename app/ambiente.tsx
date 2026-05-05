@@ -17,7 +17,7 @@ import { auth, db } from '../services/firebaseConfig';
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { 
   doc, onSnapshot, updateDoc, collection, query, where, 
-  collectionGroup, getDocs, orderBy, limit, setDoc, addDoc, deleteDoc
+  collectionGroup, getDocs, getDoc, orderBy, limit, setDoc, addDoc, deleteDoc
 } from "firebase/firestore";
 
 const { width } = Dimensions.get('window');
@@ -194,7 +194,7 @@ export default function AmbienteDetalhes() {
                 nome: nomeChave.replace(/_/g, ' '),
                 tipo: tipoDocId.replace(/_/g, ' '),
                 marca: propriedades.marca || '--',
-                status: propriedades.status || false,
+                status: propriedades.estado_desejado || propriedades.status || false,
               });
             }
           });
@@ -245,10 +245,9 @@ export default function AmbienteDetalhes() {
       { text: "Excluir", style: "destructive", onPress: async () => {
         try {
           const perDocRef = doc(db, "empresas", String(empresa), "ambientes", String(id), "perifericos", p.docId);
-          const docSnap = await getDocs(collection(db, "empresas", String(empresa), "ambientes", String(id), "perifericos"));
-          const docRef = docSnap.docs.find(d => d.id === p.docId);
-          if (docRef && docRef.exists()) {
-            const data = { ...docRef.data() };
+          const docSnap = await getDoc(perDocRef);
+          if (docSnap.exists()) {
+            const data = { ...docSnap.data() };
             delete data[p.nomeId];
             await setDoc(perDocRef, data);
           } else { Alert.alert("Erro", "Periférico não encontrado."); }
@@ -843,7 +842,7 @@ function AmbientePeripheralCard({ title, subtitle, brand, icon, status, empresaI
     const unsub = onSnapshot(perDocRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        if (data[perifericoId] !== undefined) setLocalStatus(data[perifericoId].status || false);
+        if (data[perifericoId] !== undefined) setLocalStatus(data[perifericoId].estado_desejado || false);
       }
     });
     return () => unsub();
@@ -855,6 +854,7 @@ function AmbientePeripheralCard({ title, subtitle, brand, icon, status, empresaI
     try {
       const perDocRef = doc(db, "empresas", empresaId, "ambientes", ambienteId, "perifericos", deviceType);
       const updateData: any = {};
+      updateData[`${perifericoId}.estado_desejado`] = !localStatus;
       updateData[`${perifericoId}.status`] = !localStatus;
       await updateDoc(perDocRef, updateData);
     } catch (e) { Alert.alert("Erro", "Falha ao atualizar status."); }

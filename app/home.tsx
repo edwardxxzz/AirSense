@@ -7,7 +7,7 @@ import {
 import { 
   Bell, Plus, Zap, Building2, BarChart3, FileText,
   RefreshCw, Thermometer, Droplets, Wind, LayoutGrid,
-  X, User, LogOut, ChevronRight, ChevronDown, Edit2, Trash2, Sun
+  X, User, LogOut, ChevronRight, MoreVertical, Edit2, Trash2, Sun
 } from 'lucide-react-native';
 import { LineChart } from "react-native-chart-kit";
 import Svg, { Circle } from 'react-native-svg';
@@ -280,13 +280,24 @@ export default function DashboardScreen() {
 
   const handleDeleteAmbiente = (id: string) => {
     setMenuVisibleId(null);
-    Alert.alert("Excluir Ambiente", "Deseja realmente excluir este ambiente?", [
+    Alert.alert("Excluir Ambiente", "Deseja realmente excluir este ambiente e todos os seus dados?", [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Excluir", style: "destructive", onPress: async () => {
           if (!userEmpresaId) return;
-          try { await deleteDoc(doc(db, "empresas", userEmpresaId, "ambientes", id)); }
-          catch (e) { Alert.alert("Erro", "Falha ao excluir."); }
+          try {
+            const ambRef = doc(db, "empresas", userEmpresaId, "ambientes", id);
+            // Deletar subcoleções primeiro
+            const subcollections = ['perifericos', 'agendamentos', 'historico'];
+            for (const sub of subcollections) {
+              const subSnap = await getDocs(collection(ambRef, sub));
+              for (const subDoc of subSnap.docs) {
+                await deleteDoc(subDoc.ref);
+              }
+            }
+            await deleteDoc(ambRef);
+          }
+          catch (e) { console.error(e); Alert.alert("Erro", "Falha ao excluir."); }
         }
       }
     ]);
@@ -561,7 +572,7 @@ function RoomCard({ name, type, temp, hum, aqi, icon, onPress, onPressArrow }: a
           </View>
         </View>
         <TouchableOpacity onPress={onPressArrow} style={{ padding: 5 }}>
-          <ChevronDown color="#64748B" size={22} />
+          <MoreVertical color="#64748B" size={22} />
         </TouchableOpacity>
       </View>
       <View style={styles.metricsRow}>
