@@ -677,9 +677,9 @@ export default function AmbienteDetalhes() {
             </View>
 
             <Text style={styles.label}>Descrição</Text>
-            <View style={[styles.inputBox, { height: 70 }]}>
+            <View style={[styles.inputBox, { height: 60 }]}>
               <TextInput 
-                style={[styles.input, { height: 60 }]} placeholder="Ex: Ligar ar-condicionado antes da reunião" 
+                style={[styles.input, { height: 50, textAlignVertical: 'top' }]} placeholder="Ex: Ligar ar-condicionado antes da reunião" 
                 value={scheduleForm.descricao} 
                 onChangeText={(t) => setScheduleForm(prev => ({...prev, descricao: t}))}
                 multiline
@@ -999,8 +999,8 @@ const styles = StyleSheet.create({
   formTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', color: '#000', marginBottom: 5 },
   formSubtitle: { fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 20 },
   label: { fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 6 },
-  inputBox: { height: 50, borderWidth: 1.5, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  input: { flex: 1, height: '90%', fontSize: 15, color: '#000', outlineWidth: 0, outlineColor: "transparent" as any },
+  inputBox: { height: 48, borderWidth: 1.5, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 14, overflow: 'hidden' },
+  input: { flex: 1, fontSize: 15, color: '#000', paddingVertical: 0, outlineWidth: 0, outlineColor: "transparent" as any },
   row: { flexDirection: 'row' },
   formButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
   btnCancelForm: { flex: 1, height: 50, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },

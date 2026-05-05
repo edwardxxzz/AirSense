@@ -836,9 +836,9 @@ export default function AmbientesScreen() {
             </View>
 
             <Text style={styles.label}>Descrição</Text>
-            <View style={[styles.inputBox, { height: 65 }]}>
+            <View style={[styles.inputBox, { height: 60 }]}>
               <TextInput 
-                style={[styles.input, { height: 55 }]} placeholder="Ex: Ligar ar-condicionado antes da reunião" 
+                style={[styles.input, { height: 50, textAlignVertical: 'top' }]} placeholder="Ex: Ligar ar-condicionado antes da reunião" 
                 value={formAgendamento.descricao} 
                 onChangeText={(t) => setFormAgendamento(prev => ({...prev, descricao: t}))}
                 multiline
@@ -1073,9 +1073,9 @@ const styles = StyleSheet.create({
   btnActionPrimaryText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
   btnActionSecondary: { flex: 1, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#CBD5E1', height: 48, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   btnActionSecondaryText: { color: '#1E293B', fontWeight: 'bold', fontSize: 15 },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 12, paddingHorizontal: 15, height: 50, marginBottom: 25, borderWidth: 1, borderColor: '#E2E8F0', gap: 10 },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 12, paddingHorizontal: 12, height: 48, marginBottom: 25, borderWidth: 1, borderColor: '#E2E8F0', gap: 10, overflow: 'hidden' },
   searchContainerFocused: { borderColor: '#000', backgroundColor: '#FFF' },
-  searchInput: { flex: 1, height: '90%', fontSize: 15, color: '#1E293B', outlineWidth: 0, outlineColor: "transparent" as any },
+  searchInput: { flex: 1, fontSize: 15, color: '#1E293B', paddingVertical: 0, outlineWidth: 0, outlineColor: "transparent" as any },
   roomCard: { backgroundColor: '#F0F9FF', borderRadius: 24, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: '#BAE6FD' },
   roomHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   roomInfoMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -1129,8 +1129,8 @@ const styles = StyleSheet.create({
   formTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', color: '#000', marginBottom: 5 },
   formSubtitle: { fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 25 },
   label: { fontSize: 14, fontWeight: '700', color: '#1E293B', marginBottom: 8 },
-  inputBox: { height: 55, borderWidth: 1.5, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
-  input: { flex: 1, height: '90%', fontSize: 15, color: '#000', outlineWidth: 0, outlineColor: "transparent" as any },
+  inputBox: { height: 50, borderWidth: 1.5, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 18, overflow: 'hidden' },
+  input: { flex: 1, fontSize: 15, color: '#000', paddingVertical: 0, outlineWidth: 0, outlineColor: "transparent" as any },
   row: { flexDirection: 'row' },
   formButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 },
   btnCancelForm: { flex: 1, height: 50, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },
