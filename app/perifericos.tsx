@@ -11,6 +11,7 @@ import {
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router'; 
 
+import ConfirmModal from '../components/ConfirmModal';
 import { auth, db } from '../services/firebaseConfig';
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { 
@@ -50,6 +51,15 @@ export default function PerifericosScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true); 
+
+  // Confirmation modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ visible: false, title: '', message: '', onConfirm: () => {} });
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const [perifericos, setPerifericos] = useState<PerifericoData[]>([]);
   const [empresaId, setEmpresaId] = useState<string>('');
@@ -233,38 +243,45 @@ export default function PerifericosScreen() {
 
   const handleDeletePeriferico = (item: PerifericoData) => {
     setMenuVisibleId(null);
-    Alert.alert("Excluir", `Deseja remover ${item.nome}?`, [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Excluir", style: "destructive", onPress: async () => {
+    setConfirmModal({
+      visible: true,
+      title: 'Excluir Periférico',
+      message: `Deseja remover "${item.nome}"? Esta ação não pode ser desfeita.`,
+      onConfirm: async () => {
         if (!empresaId || !item.ambienteId || !item.tipo || !item.id) {
           console.error("Dados insuficientes para excluir periférico:", { empresaId, ambienteId: item.ambienteId, tipo: item.tipo, id: item.id });
-          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresaId || 'vazio'}, Amb: ${item.ambienteId || 'vazio'}, Tipo: ${item.tipo || 'vazio'}, ID: ${item.id || 'vazio'}`);
+          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresaId || 'vazio'}, Amb: ${item.ambienteId || 'vazio'}`);
+          setConfirmModal(prev => ({ ...prev, visible: false }));
           return;
         }
+        setIsDeleting(true);
         try {
           const perDocRef = doc(db, "empresas", empresaId, "ambientes", item.ambienteId, "perifericos", item.tipo);
           console.log("Excluindo periférico:", `empresas/${empresaId}/ambientes/${item.ambienteId}/perifericos/${item.tipo}`, "campo:", item.id);
           
-          // Usa updateDoc com deleteField() para remover o campo de forma atômica
           await updateDoc(perDocRef, {
             [item.id]: deleteField()
           });
           
           console.log("Periférico excluído com sucesso no Firestore");
+          setConfirmModal(prev => ({ ...prev, visible: false }));
           carregarDados(empresaId);
           Alert.alert("Sucesso", "Periférico excluído!");
         } catch (e: any) { 
           console.error("Erro ao excluir periférico:", e);
           const errorCode = e?.code || '';
           const errorMsg = e?.message || String(e);
+          setConfirmModal(prev => ({ ...prev, visible: false }));
           if (errorCode === 'permission-denied') {
-            Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.\n\nCaminho: empresas/" + empresaId + "/ambientes/" + item.ambienteId + "/perifericos/" + item.tipo);
+            Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.");
           } else {
             Alert.alert("Erro ao Excluir", `Código: ${errorCode}\nMensagem: ${errorMsg}`);
           }
+        } finally {
+          setIsDeleting(false);
         }
-      }}
-    ]);
+      }
+    });
   };
 
   const resetForm = () => {
@@ -511,6 +528,19 @@ export default function PerifericosScreen() {
         <TabItem icon={<Bell size={24} color="#64748B" />} onPress={() => router.push('/notificacao')} />
         <TabItem icon={<BarChart3 size={24} color="#64748B" />} onPress={() => router.push('/relatorios')} />
       </View>
+
+      {/* CONFIRM MODAL - Delete confirmation */}
+      <ConfirmModal
+        visible={confirmModal.visible}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        destructive
+        loading={isDeleting}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, visible: false }))}
+      />
     </SafeAreaView>
   );
 }

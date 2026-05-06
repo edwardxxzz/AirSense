@@ -24,6 +24,7 @@ import {
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router'; 
 
+import ConfirmModal from '../components/ConfirmModal';
 import { auth, db } from '../services/firebaseConfig';
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { 
@@ -77,6 +78,15 @@ export default function AmbientesScreen() {
   const [menuVisibleId, setMenuVisibleId] = useState<string | null>(null);
   const [menuVisibleAgendId, setMenuVisibleAgendId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true); 
+
+  // Confirmation modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ visible: false, title: '', message: '', onConfirm: () => {} });
+  const [isDeleting, setIsDeleting] = useState(false); 
   const [isSelectAmbienteOpen, setIsSelectAmbienteOpen] = useState(false);
   
   const [ambientes, setAmbientes] = useState<AmbienteData[]>([]);
@@ -151,32 +161,40 @@ export default function AmbientesScreen() {
   // Delete schedule
   const handleDeleteSchedule = (ag: AgendamentoGeral) => {
     setMenuVisibleAgendId(null);
-    Alert.alert("Excluir Agendamento", `Deseja excluir "${ag.titulo}"?`, [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Excluir", style: "destructive", onPress: async () => {
+    setConfirmModal({
+      visible: true,
+      title: 'Excluir Agendamento',
+      message: `Deseja excluir "${ag.titulo}"? Esta ação não pode ser desfeita.`,
+      onConfirm: async () => {
         if (!empresaId || !ag.ambienteId || !ag.id) {
           console.error("Dados insuficientes para excluir agendamento:", { empresaId, ambienteId: ag.ambienteId, agId: ag.id });
-          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresaId || 'vazio'}, Amb: ${ag.ambienteId || 'vazio'}, AgendId: ${ag.id || 'vazio'}`);
+          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresaId || 'vazio'}, Amb: ${ag.ambienteId || 'vazio'}`);
+          setConfirmModal(prev => ({ ...prev, visible: false }));
           return;
         }
+        setIsDeleting(true);
         try {
           const agDocRef = doc(db, "empresas", empresaId, "ambientes", ag.ambienteId, "agendamentos", ag.id);
           console.log("Excluindo agendamento:", `empresas/${empresaId}/ambientes/${ag.ambienteId}/agendamentos/${ag.id}`);
           await deleteDoc(agDocRef);
           console.log("Agendamento excluído com sucesso no Firestore");
+          setConfirmModal(prev => ({ ...prev, visible: false }));
           Alert.alert("Sucesso", "Agendamento excluído!");
         } catch (e: any) {
           console.error("Erro ao excluir agendamento:", e);
           const errorCode = e?.code || '';
           const errorMsg = e?.message || String(e);
+          setConfirmModal(prev => ({ ...prev, visible: false }));
           if (errorCode === 'permission-denied') {
             Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.");
           } else {
             Alert.alert("Erro ao Excluir", `Código: ${errorCode}\nMensagem: ${errorMsg}`);
           }
+        } finally {
+          setIsDeleting(false);
         }
-      }}
-    ]);
+      }
+    });
   };
 
   useEffect(() => {
@@ -467,51 +485,51 @@ export default function AmbientesScreen() {
   const handleDeleteAmbiente = (id: string) => {
     setMenuVisibleId(null);
     
-    Alert.alert(
-      "Excluir Ambiente", 
-      "Deseja realmente excluir este ambiente e todos os seus dados?", 
-      [
-        { text: "Cancelar", style: "cancel" },
-        { 
-          text: "Excluir", 
-          style: "destructive", 
-          onPress: async () => {
-            if(!empresaId || !id) {
-              console.error("Dados insuficientes para excluir ambiente:", { empresaId, id });
-              Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresaId || 'vazio'}, ID: ${id || 'vazio'}`);
-              return;
-            }
-            try {
-              const ambRef = doc(db, "empresas", empresaId, "ambientes", id);
-              console.log("Excluindo ambiente:", `empresas/${empresaId}/ambientes/${id}`);
-              
-              // Deletar subcoleções primeiro
-              const subcollections = ['perifericos', 'agendamentos', 'historico'];
-              for (const sub of subcollections) {
-                const subSnap = await getDocs(collection(ambRef, sub));
-                console.log(`Subcoleção ${sub}: ${subSnap.docs.length} documentos para excluir`);
-                for (const subDoc of subSnap.docs) {
-                  console.log(`Excluindo subdocumento: ${subDoc.ref.path}`);
-                  await deleteDoc(subDoc.ref);
-                }
-              }
-              await deleteDoc(ambRef);
-              console.log("Ambiente excluído com sucesso no Firestore");
-              Alert.alert("Sucesso", "Ambiente excluído!");
-            } catch (e: any) {
-              console.error("Erro ao excluir ambiente:", e);
-              const errorCode = e?.code || '';
-              const errorMsg = e?.message || String(e);
-              if (errorCode === 'permission-denied') {
-                Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.");
-              } else {
-                Alert.alert("Erro ao Excluir", `Código: ${errorCode}\nMensagem: ${errorMsg}`);
-              }
+    setConfirmModal({
+      visible: true,
+      title: 'Excluir Ambiente',
+      message: 'Deseja realmente excluir este ambiente e todos os seus dados? Esta ação não pode ser desfeita.',
+      onConfirm: async () => {
+        if(!empresaId || !id) {
+          console.error("Dados insuficientes para excluir ambiente:", { empresaId, id });
+          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresaId || 'vazio'}, ID: ${id || 'vazio'}`);
+          setConfirmModal(prev => ({ ...prev, visible: false }));
+          return;
+        }
+        setIsDeleting(true);
+        try {
+          const ambRef = doc(db, "empresas", empresaId, "ambientes", id);
+          console.log("Excluindo ambiente:", `empresas/${empresaId}/ambientes/${id}`);
+          
+          // Deletar subcoleções primeiro
+          const subcollections = ['perifericos', 'agendamentos', 'historico'];
+          for (const sub of subcollections) {
+            const subSnap = await getDocs(collection(ambRef, sub));
+            console.log(`Subcoleção ${sub}: ${subSnap.docs.length} documentos para excluir`);
+            for (const subDoc of subSnap.docs) {
+              console.log(`Excluindo subdocumento: ${subDoc.ref.path}`);
+              await deleteDoc(subDoc.ref);
             }
           }
+          await deleteDoc(ambRef);
+          console.log("Ambiente excluído com sucesso no Firestore");
+          setConfirmModal(prev => ({ ...prev, visible: false }));
+          Alert.alert("Sucesso", "Ambiente excluído!");
+        } catch (e: any) {
+          console.error("Erro ao excluir ambiente:", e);
+          const errorCode = e?.code || '';
+          const errorMsg = e?.message || String(e);
+          setConfirmModal(prev => ({ ...prev, visible: false }));
+          if (errorCode === 'permission-denied') {
+            Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.");
+          } else {
+            Alert.alert("Erro ao Excluir", `Código: ${errorCode}\nMensagem: ${errorMsg}`);
+          }
+        } finally {
+          setIsDeleting(false);
         }
-      ]
-    );
+      }
+    });
   };
 
   const resetForm = () => {
@@ -1022,6 +1040,19 @@ export default function AmbientesScreen() {
         <TabItem icon={<Bell size={24} color="#64748B" />} onPress={() => router.push('/notificacao')} />
         <TabItem icon={<BarChart3 size={24} color="#64748B" />} onPress={() => router.push('/relatorios')} />
       </View>
+
+      {/* CONFIRM MODAL - Delete confirmation */}
+      <ConfirmModal
+        visible={confirmModal.visible}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        destructive
+        loading={isDeleting}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, visible: false }))}
+      />
     </SafeAreaView>
   );
 }

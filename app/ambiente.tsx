@@ -13,6 +13,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Circle } from 'react-native-svg';
 import { LineChart } from "react-native-chart-kit";
 
+import ConfirmModal from '../components/ConfirmModal';
 import { auth, db } from '../services/firebaseConfig';
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { 
@@ -46,6 +47,15 @@ export default function AmbienteDetalhes() {
   const [isProfileVisible, setIsProfileVisible] = useState(false);
   const [menuVisiblePerifId, setMenuVisiblePerifId] = useState<string | null>(null);
   const [menuVisibleAgendId, setMenuVisibleAgendId] = useState<string | null>(null);
+  
+  // Confirmation modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ visible: false, title: '', message: '', onConfirm: () => {} });
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const [userData, setUserData] = useState({ nome: 'Usuário', email: '', iniciais: 'US' });
   const [sensores, setSensores] = useState({ temperatura: '--', umidade: '--', luminosidade: '--', indice_geral: 0 });
@@ -240,37 +250,44 @@ export default function AmbienteDetalhes() {
 
   const handleDeletePeriferico = (p: any) => {
     setMenuVisiblePerifId(null);
-    Alert.alert("Excluir", `Deseja remover ${p.nome}?`, [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Excluir", style: "destructive", onPress: async () => {
+    setConfirmModal({
+      visible: true,
+      title: 'Excluir Periférico',
+      message: `Deseja remover "${p.nome}"? Esta ação não pode ser desfeita.`,
+      onConfirm: async () => {
         if (!empresa || !id || !p.docId || !p.nomeId) {
           console.error("Dados insuficientes para excluir periférico:", { empresa, id, docId: p.docId, nomeId: p.nomeId });
-          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresa || 'vazio'}, Amb: ${id || 'vazio'}, DocId: ${p.docId || 'vazio'}, NomeId: ${p.nomeId || 'vazio'}`);
+          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresa || 'vazio'}, Amb: ${id || 'vazio'}`);
+          setConfirmModal(prev => ({ ...prev, visible: false }));
           return;
         }
+        setIsDeleting(true);
         try {
           const perDocRef = doc(db, "empresas", String(empresa), "ambientes", String(id), "perifericos", p.docId);
           console.log("Excluindo periférico:", `empresas/${empresa}/ambientes/${id}/perifericos/${p.docId}`, "campo:", p.nomeId);
           
-          // Usa updateDoc com deleteField() para remover o campo de forma atômica
           await updateDoc(perDocRef, {
             [p.nomeId]: deleteField()
           });
           
           console.log("Periférico excluído com sucesso no Firestore");
+          setConfirmModal(prev => ({ ...prev, visible: false }));
           Alert.alert("Sucesso", "Periférico excluído!");
         } catch (e: any) { 
           console.error("Erro ao excluir periférico:", e);
           const errorCode = e?.code || '';
           const errorMsg = e?.message || String(e);
+          setConfirmModal(prev => ({ ...prev, visible: false }));
           if (errorCode === 'permission-denied') {
             Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.");
           } else {
             Alert.alert("Erro ao Excluir", `Código: ${errorCode}\nMensagem: ${errorMsg}`);
           }
+        } finally {
+          setIsDeleting(false);
         }
-      }}
-    ]);
+      }
+    });
   };
 
   // Schedule CRUD
@@ -360,32 +377,40 @@ export default function AmbienteDetalhes() {
 
   const handleDeleteSchedule = (ag: AgendamentoData) => {
     setMenuVisibleAgendId(null);
-    Alert.alert("Excluir Agendamento", `Deseja excluir "${ag.titulo}"?`, [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Excluir", style: "destructive", onPress: async () => {
+    setConfirmModal({
+      visible: true,
+      title: 'Excluir Agendamento',
+      message: `Deseja excluir "${ag.titulo}"? Esta ação não pode ser desfeita.`,
+      onConfirm: async () => {
         if (!empresa || !id || !ag.id) {
           console.error("Dados insuficientes para excluir agendamento:", { empresa, id, agId: ag.id });
-          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresa || 'vazio'}, Amb: ${id || 'vazio'}, AgendId: ${ag.id || 'vazio'}`);
+          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresa || 'vazio'}, Amb: ${id || 'vazio'}`);
+          setConfirmModal(prev => ({ ...prev, visible: false }));
           return;
         }
+        setIsDeleting(true);
         try {
           const agDocRef = doc(db, "empresas", String(empresa), "ambientes", String(id), "agendamentos", ag.id);
           console.log("Excluindo agendamento:", `empresas/${empresa}/ambientes/${id}/agendamentos/${ag.id}`);
           await deleteDoc(agDocRef);
           console.log("Agendamento excluído com sucesso no Firestore");
+          setConfirmModal(prev => ({ ...prev, visible: false }));
           Alert.alert("Sucesso", "Agendamento excluído!");
         } catch (e: any) {
           console.error("Erro ao excluir agendamento:", e);
           const errorCode = e?.code || '';
           const errorMsg = e?.message || String(e);
+          setConfirmModal(prev => ({ ...prev, visible: false }));
           if (errorCode === 'permission-denied') {
             Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.");
           } else {
             Alert.alert("Erro ao Excluir", `Código: ${errorCode}\nMensagem: ${errorMsg}`);
           }
+        } finally {
+          setIsDeleting(false);
         }
-      }}
-    ]);
+      }
+    });
   };
 
   const handleLogout = async () => { await signOut(auth); setIsProfileVisible(false); router.replace('/'); };
@@ -462,7 +487,7 @@ export default function AmbienteDetalhes() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.titleSection}>
-          <TouchableOpacity onPress={() => router.back()} style={{ padding: 10, marginLeft: -10 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><ArrowLeft color="#000" size={28} /></TouchableOpacity>
+          <TouchableOpacity onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace('/ambientes'); } }} style={{ padding: 10, marginLeft: -10 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><ArrowLeft color="#000" size={28} /></TouchableOpacity>
           <View>
             <Text style={styles.envName}>{nome || 'Nome Ambiente'}</Text>
             <Text style={styles.envSub}>{caracteristicas.tipo} • {caracteristicas.andar}</Text>
@@ -860,6 +885,19 @@ export default function AmbienteDetalhes() {
           </View>
         </View>
       </Modal>
+
+      {/* CONFIRM MODAL - Delete confirmation */}
+      <ConfirmModal
+        visible={confirmModal.visible}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        destructive
+        loading={isDeleting}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, visible: false }))}
+      />
     </SafeAreaView>
   );
 }
