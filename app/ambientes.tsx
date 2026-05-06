@@ -606,11 +606,6 @@ export default function AmbientesScreen() {
         {/* ==================== TAB: AMBIENTES ==================== */}
         {mainTab === 'ambientes' && (
           <>
-            <TouchableOpacity style={styles.btnActionPrimary} onPress={() => { resetForm(); setIsAdding(true); }}>
-              <Plus color="#FFF" size={20} />
-              <Text style={styles.btnActionPrimaryText}>Novo Ambiente</Text>
-            </TouchableOpacity>
-
             <Pressable style={[styles.searchContainer, isFocused && styles.searchContainerFocused]} onPress={() => inputRef.current?.focus()}>
               <Search color={isFocused ? "#000" : "#64748B"} size={20} />
               <TextInput 
@@ -619,6 +614,11 @@ export default function AmbientesScreen() {
                 onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)}
               />
             </Pressable>
+
+            <TouchableOpacity style={styles.btnActionPrimary} onPress={() => { resetForm(); setIsAdding(true); }}>
+              <Plus color="#FFF" size={20} />
+              <Text style={styles.btnActionPrimaryText}>Novo Ambiente</Text>
+            </TouchableOpacity>
 
             {isLoading ? (
               [1, 2, 3, 4].map((item) => <SkeletonCard key={item} />)
