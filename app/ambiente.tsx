@@ -17,7 +17,7 @@ import { auth, db } from '../services/firebaseConfig';
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { 
   doc, onSnapshot, updateDoc, collection, query, where, 
-  collectionGroup, getDocs, getDoc, orderBy, limit, setDoc, addDoc, deleteDoc
+  collectionGroup, getDocs, getDoc, orderBy, limit, setDoc, addDoc, deleteDoc, deleteField
 } from "firebase/firestore";
 
 const { width } = Dimensions.get('window');
@@ -243,15 +243,39 @@ export default function AmbienteDetalhes() {
     Alert.alert("Excluir", `Deseja remover ${p.nome}?`, [
       { text: "Cancelar", style: "cancel" },
       { text: "Excluir", style: "destructive", onPress: async () => {
+        if (!empresa || !id || !p.docId || !p.nomeId) {
+          console.error("Dados insuficientes para excluir periférico:", { empresa, id, docId: p.docId, nomeId: p.nomeId });
+          Alert.alert("Erro", "Dados insuficientes para excluir.");
+          return;
+        }
         try {
           const perDocRef = doc(db, "empresas", String(empresa), "ambientes", String(id), "perifericos", p.docId);
+          console.log("Excluindo periférico:", `empresas/${empresa}/ambientes/${id}/perifericos/${p.docId}`, "campo:", p.nomeId);
+          
+          // Verifica se o documento existe
           const docSnap = await getDoc(perDocRef);
-          if (docSnap.exists()) {
-            const data = { ...docSnap.data() };
-            delete data[p.nomeId];
-            await setDoc(perDocRef, data);
-          } else { Alert.alert("Erro", "Periférico não encontrado."); }
-        } catch (e) { console.error(e); Alert.alert("Erro", "Falha ao excluir."); }
+          if (!docSnap.exists()) {
+            Alert.alert("Erro", "Documento de periférico não encontrado no Firestore.");
+            return;
+          }
+          
+          // Verifica se o campo realmente existe
+          const data = docSnap.data();
+          if (!(p.nomeId in data)) {
+            Alert.alert("Erro", "Periférico não encontrado no documento.");
+            return;
+          }
+          
+          // Usa updateDoc com deleteField() para remover o campo de forma atômica
+          await updateDoc(perDocRef, {
+            [p.nomeId]: deleteField()
+          });
+          
+          console.log("Periférico excluído com sucesso no Firestore");
+        } catch (e) { 
+          console.error("Erro ao excluir periférico:", e); 
+          Alert.alert("Erro", "Falha ao excluir periférico do Firestore."); 
+        }
       }}
     ]);
   };
@@ -346,11 +370,19 @@ export default function AmbienteDetalhes() {
     Alert.alert("Excluir Agendamento", `Deseja excluir "${ag.titulo}"?`, [
       { text: "Cancelar", style: "cancel" },
       { text: "Excluir", style: "destructive", onPress: async () => {
+        if (!empresa || !id || !ag.id) {
+          console.error("Dados insuficientes para excluir agendamento:", { empresa, id, agId: ag.id });
+          Alert.alert("Erro", "Dados insuficientes para excluir agendamento.");
+          return;
+        }
         try {
-          await deleteDoc(doc(db, "empresas", String(empresa), "ambientes", String(id), "agendamentos", ag.id));
+          const agDocRef = doc(db, "empresas", String(empresa), "ambientes", String(id), "agendamentos", ag.id);
+          console.log("Excluindo agendamento:", `empresas/${empresa}/ambientes/${id}/agendamentos/${ag.id}`);
+          await deleteDoc(agDocRef);
+          console.log("Agendamento excluído com sucesso no Firestore");
         } catch (e) {
           console.error("Erro ao excluir agendamento:", e);
-          Alert.alert("Erro", "Falha ao excluir agendamento.");
+          Alert.alert("Erro", "Falha ao excluir agendamento do Firestore.");
         }
       }}
     ]);

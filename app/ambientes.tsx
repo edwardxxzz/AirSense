@@ -154,11 +154,19 @@ export default function AmbientesScreen() {
     Alert.alert("Excluir Agendamento", `Deseja excluir "${ag.titulo}"?`, [
       { text: "Cancelar", style: "cancel" },
       { text: "Excluir", style: "destructive", onPress: async () => {
+        if (!empresaId || !ag.ambienteId || !ag.id) {
+          console.error("Dados insuficientes para excluir agendamento:", { empresaId, ambienteId: ag.ambienteId, agId: ag.id });
+          Alert.alert("Erro", "Dados insuficientes para excluir agendamento.");
+          return;
+        }
         try {
-          await deleteDoc(doc(db, "empresas", empresaId, "ambientes", ag.ambienteId, "agendamentos", ag.id));
+          const agDocRef = doc(db, "empresas", empresaId, "ambientes", ag.ambienteId, "agendamentos", ag.id);
+          console.log("Excluindo agendamento:", `empresas/${empresaId}/ambientes/${ag.ambienteId}/agendamentos/${ag.id}`);
+          await deleteDoc(agDocRef);
+          console.log("Agendamento excluído com sucesso no Firestore");
         } catch (e) {
           console.error("Erro ao excluir agendamento:", e);
-          Alert.alert("Erro", "Falha ao excluir agendamento.");
+          Alert.alert("Erro", "Falha ao excluir agendamento do Firestore.");
         }
       }}
     ]);
@@ -461,22 +469,31 @@ export default function AmbientesScreen() {
           text: "Excluir", 
           style: "destructive", 
           onPress: async () => {
-            if(!empresaId) return;
+            if(!empresaId || !id) {
+              console.error("Dados insuficientes para excluir ambiente:", { empresaId, id });
+              Alert.alert("Erro", "Dados insuficientes para excluir ambiente.");
+              return;
+            }
             try {
               const ambRef = doc(db, "empresas", empresaId, "ambientes", id);
+              console.log("Excluindo ambiente:", `empresas/${empresaId}/ambientes/${id}`);
+              
               // Deletar subcoleções primeiro
               const subcollections = ['perifericos', 'agendamentos', 'historico'];
               for (const sub of subcollections) {
                 const subSnap = await getDocs(collection(ambRef, sub));
+                console.log(`Subcoleção ${sub}: ${subSnap.docs.length} documentos para excluir`);
                 for (const subDoc of subSnap.docs) {
+                  console.log(`Excluindo subdocumento: ${subDoc.ref.path}`);
                   await deleteDoc(subDoc.ref);
                 }
               }
               await deleteDoc(ambRef);
+              console.log("Ambiente excluído com sucesso no Firestore");
               Alert.alert("Sucesso", "Ambiente excluído.");
             } catch (e) {
-              console.error("Erro ao excluir:", e);
-              Alert.alert("Erro", "Falha ao excluir.");
+              console.error("Erro ao excluir ambiente:", e);
+              Alert.alert("Erro", "Falha ao excluir ambiente do Firestore.");
             }
           }
         }

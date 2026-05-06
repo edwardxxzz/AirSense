@@ -284,20 +284,29 @@ export default function DashboardScreen() {
       { text: "Cancelar", style: "cancel" },
       {
         text: "Excluir", style: "destructive", onPress: async () => {
-          if (!userEmpresaId) return;
+          if (!userEmpresaId || !id) {
+            console.error("Dados insuficientes para excluir ambiente:", { userEmpresaId, id });
+            Alert.alert("Erro", "Dados insuficientes para excluir ambiente.");
+            return;
+          }
           try {
             const ambRef = doc(db, "empresas", userEmpresaId, "ambientes", id);
+            console.log("Excluindo ambiente:", `empresas/${userEmpresaId}/ambientes/${id}`);
+            
             // Deletar subcoleções primeiro
             const subcollections = ['perifericos', 'agendamentos', 'historico'];
             for (const sub of subcollections) {
               const subSnap = await getDocs(collection(ambRef, sub));
+              console.log(`Subcoleção ${sub}: ${subSnap.docs.length} documentos para excluir`);
               for (const subDoc of subSnap.docs) {
+                console.log(`Excluindo subdocumento: ${subDoc.ref.path}`);
                 await deleteDoc(subDoc.ref);
               }
             }
             await deleteDoc(ambRef);
+            console.log("Ambiente excluído com sucesso no Firestore");
           }
-          catch (e) { console.error(e); Alert.alert("Erro", "Falha ao excluir."); }
+          catch (e) { console.error("Erro ao excluir ambiente:", e); Alert.alert("Erro", "Falha ao excluir ambiente do Firestore."); }
         }
       }
     ]);
