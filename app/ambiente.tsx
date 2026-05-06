@@ -726,7 +726,7 @@ export default function AmbienteDetalhes() {
             <Text style={styles.label}>Título *</Text>
             <View style={styles.inputBox}>
               <TextInput 
-                style={styles.input} placeholder="Ex: Climatização para reunião" 
+                style={styles.input} placeholder="Ex: Climatização para reunião" placeholderTextColor="#94A3B8"
                 value={scheduleForm.titulo} 
                 onChangeText={(t) => setScheduleForm(prev => ({...prev, titulo: t}))} 
               />
@@ -735,7 +735,7 @@ export default function AmbienteDetalhes() {
             <Text style={styles.label}>Descrição</Text>
             <View style={[styles.inputBox, { height: 60 }]}>
               <TextInput 
-                style={[styles.input, { height: 50, textAlignVertical: 'top' }]} placeholder="Ex: Ligar ar-condicionado antes da reunião" 
+                style={[styles.input, { height: 50, textAlignVertical: 'top' }]} placeholder="Ex: Ligar ar-condicionado antes da reunião" placeholderTextColor="#94A3B8"
                 value={scheduleForm.descricao} 
                 onChangeText={(t) => setScheduleForm(prev => ({...prev, descricao: t}))}
                 multiline
@@ -747,7 +747,7 @@ export default function AmbienteDetalhes() {
               style={[styles.inputBox, { justifyContent: 'space-between' }]} 
               onPress={() => { setIsPerifericoDropdownOpen(!isPerifericoDropdownOpen); setIsAcaoDropdownOpen(false); }}
             >
-              <Text style={{ color: scheduleForm.perifericoId ? '#1E293B' : '#94A3B8', fontSize: 15 }}>
+              <Text style={{ color: scheduleForm.perifericoId ? '#000' : '#94A3B8', fontSize: 15 }}>
                 {scheduleForm.perifericoNome}
               </Text>
               <ChevronDown color="#94A3B8" size={20} />
@@ -786,7 +786,7 @@ export default function AmbienteDetalhes() {
               style={[styles.inputBox, { justifyContent: 'space-between' }]} 
               onPress={() => { setIsAcaoDropdownOpen(!isAcaoDropdownOpen); setIsPerifericoDropdownOpen(false); }}
             >
-              <Text style={{ color: scheduleForm.acao ? '#1E293B' : '#94A3B8', fontSize: 15 }}>
+              <Text style={{ color: scheduleForm.acao ? '#000' : '#94A3B8', fontSize: 15 }}>
                 {scheduleForm.acaoLabel}
               </Text>
               <ChevronDown color="#94A3B8" size={20} />
@@ -827,7 +827,7 @@ export default function AmbienteDetalhes() {
                 <Text style={styles.label}>Data *</Text>
                 <View style={styles.inputBox}>
                   <TextInput 
-                    style={styles.input} placeholder="DD/MM/AAAA" 
+                    style={styles.input} placeholder="DD/MM/AAAA" placeholderTextColor="#94A3B8"
                     value={scheduleForm.data} 
                     onChangeText={(t) => setScheduleForm(prev => ({...prev, data: t}))} 
                   />
@@ -838,7 +838,7 @@ export default function AmbienteDetalhes() {
                 <Text style={styles.label}>Horário *</Text>
                 <View style={styles.inputBox}>
                   <TextInput 
-                    style={styles.input} placeholder="HH:MM" 
+                    style={styles.input} placeholder="HH:MM" placeholderTextColor="#94A3B8"
                     value={scheduleForm.horario} 
                     onChangeText={(t) => setScheduleForm(prev => ({...prev, horario: t}))} 
                   />
@@ -1080,7 +1080,7 @@ const styles = StyleSheet.create({
   dropdownContainer: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, marginTop: -10, marginBottom: 14, elevation: 3 },
   dropdownItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   dropdownItemActive: { backgroundColor: '#EFF6FF' },
-  dropdownText: { fontSize: 15, color: '#1E293B' },
+  dropdownText: { fontSize: 15, color: '#000' },
   // Profile modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', flexDirection: 'row' },
   modalBackdrop: { flex: 0.2 },

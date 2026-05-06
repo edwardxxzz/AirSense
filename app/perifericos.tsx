@@ -371,21 +371,21 @@ export default function PerifericosScreen() {
                 <>
                   <Text style={styles.label}>Nome *</Text>
                   <View style={styles.inputBox}>
-                    <TextInput style={styles.input} placeholder="Ex: Ar Condicionado Principal" value={formNome} onChangeText={setFormNome} />
+                    <TextInput style={styles.input} placeholder="Ex: Ar Condicionado Principal" placeholderTextColor="#94A3B8" value={formNome} onChangeText={setFormNome} />
                   </View>
 
                   <Text style={styles.label}>Ambiente *</Text>
                   <TouchableOpacity style={styles.inputBox} onPress={() => setShowAmbienteModal(true)}>
-                    <Text style={[styles.inputText, !formAmbiente && {color: '#94A3B8'}]}>{formAmbiente || "Selecione o ambiente"}</Text>
-                    <ChevronDown color="#64748B" size={20} />
+                    <Text style={[styles.inputText, !formAmbiente && {color: '#94A3B8'}, formAmbiente && {color: '#000'}]}>{formAmbiente || "Selecione o ambiente"}</Text>
+                    <ChevronDown color="#94A3B8" size={20} />
                   </TouchableOpacity>
 
                   <Text style={styles.label}>Tipo de Sistema *</Text>
                   <TouchableOpacity style={styles.inputBox} onPress={() => setShowTipoModal(true)}>
-                    <Text style={[styles.inputText, !formTipo && {color: '#94A3B8'}]}>
+                    <Text style={[styles.inputText, !formTipo && {color: '#94A3B8'}, formTipo && {color: '#000'}]}>
                       {formTipo ? TIPOS_LABEL[formTipo] || formTipo : "Selecione o tipo"}
                     </Text>
-                    <ChevronDown color="#64748B" size={20} />
+                    <ChevronDown color="#94A3B8" size={20} />
                   </TouchableOpacity>
 
                   {/* Campo de tipo customizado quando 'outro' */}
@@ -393,7 +393,7 @@ export default function PerifericosScreen() {
                     <>
                       <Text style={styles.label}>Especifique o Tipo *</Text>
                       <View style={styles.inputBox}>
-                        <TextInput style={styles.input} placeholder="Ex: Ventilador, Projetor..." value={formTipoCustom} onChangeText={setFormTipoCustom} />
+                        <TextInput style={styles.input} placeholder="Ex: Ventilador, Projetor..." placeholderTextColor="#94A3B8" value={formTipoCustom} onChangeText={setFormTipoCustom} />
                       </View>
                     </>
                   )}
@@ -406,7 +406,7 @@ export default function PerifericosScreen() {
                 <>
                   <Text style={styles.label}>Marca</Text>
                   <View style={styles.inputBox}>
-                    <TextInput style={styles.input} placeholder="Ex: LG" value={formMarca} onChangeText={setFormMarca} />
+                    <TextInput style={styles.input} placeholder="Ex: LG" placeholderTextColor="#94A3B8" value={formMarca} onChangeText={setFormMarca} />
                   </View>
                 </>
               ) : (
@@ -417,7 +417,7 @@ export default function PerifericosScreen() {
                     <View style={styles.inputBox}>
                       <TextInput 
                         style={styles.input} 
-                        placeholder={formTipo === 'tomada' ? "Ex: 220v, 110v..." : "Ex: LG"} 
+                        placeholder={formTipo === 'tomada' ? "Ex: 220v, 110v..." : "Ex: LG"} placeholderTextColor="#94A3B8"
                         value={formTipo === 'tomada' ? formSubTipo : formMarca} 
                         onChangeText={formTipo === 'tomada' ? setFormSubTipo : setFormMarca} 
                       />
@@ -429,7 +429,7 @@ export default function PerifericosScreen() {
                     <View style={styles.inputBox}>
                       <TextInput 
                         style={styles.input} 
-                        placeholder={getCapacidadePlaceholder()} 
+                        placeholder={getCapacidadePlaceholder()} placeholderTextColor="#94A3B8"
                         value={formCapacidade} 
                         onChangeText={setFormCapacidade}
                         keyboardType={formTipo === 'tomada' ? 'numeric' : 'default'}
@@ -707,7 +707,7 @@ const styles = StyleSheet.create({
   pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   pickerTitle: { fontSize: 18, fontWeight: 'bold' },
   pickerItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  pickerText: { fontSize: 16, color: '#334155' },
+  pickerText: { fontSize: 16, color: '#000' },
   bottomTab: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 75, backgroundColor: '#FFF', flexDirection: 'row', borderTopWidth: 1, borderColor: '#E2E8F0', paddingBottom: 15 },
   tabItem: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   activeIndicator: { position: 'absolute', bottom: 10, width: 4, height: 4, borderRadius: 2, backgroundColor: '#2563EB' },

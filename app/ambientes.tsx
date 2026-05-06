@@ -800,33 +800,33 @@ export default function AmbientesScreen() {
 
             <Text style={styles.label}>Nome do Ambiente *</Text>
             <View style={styles.inputBox}>
-              <TextInput style={styles.input} placeholder="Ex: Sala de Reunião" value={formNome} onChangeText={setFormNome} />
+              <TextInput style={styles.input} placeholder="Ex: Sala de Reunião" placeholderTextColor="#94A3B8" value={formNome} onChangeText={setFormNome} />
             </View>
 
             <Text style={styles.label}>Tipo *</Text>
             <View style={styles.inputBox}>
-              <TextInput style={styles.input} placeholder="Ex: Escritório" value={formTipo} onChangeText={setFormTipo} />
+              <TextInput style={styles.input} placeholder="Ex: Escritório" placeholderTextColor="#94A3B8" value={formTipo} onChangeText={setFormTipo} />
             </View>
 
             <View style={styles.row}>
               <View style={{flex: 1}}>
                 <Text style={styles.label}>Área(m²)</Text>
                 <View style={styles.inputBox}>
-                  <TextInput style={styles.input} placeholder="0" keyboardType="numeric" value={formArea} onChangeText={setFormArea} />
+                  <TextInput style={styles.input} placeholder="0" placeholderTextColor="#94A3B8" keyboardType="numeric" value={formArea} onChangeText={setFormArea} />
                 </View>
               </View>
               <View style={{width: 15}} />
               <View style={{flex: 1}}>
                 <Text style={styles.label}>Capacidade</Text>
                 <View style={styles.inputBox}>
-                  <TextInput style={styles.input} placeholder="0" keyboardType="numeric" value={formCapacidade} onChangeText={setFormCapacidade} />
+                  <TextInput style={styles.input} placeholder="0" placeholderTextColor="#94A3B8" keyboardType="numeric" value={formCapacidade} onChangeText={setFormCapacidade} />
                 </View>
               </View>
             </View>
 
             <Text style={styles.label}>Andar/Localização *</Text>
             <View style={styles.inputBox}>
-              <TextInput style={styles.input} placeholder="Ex: 3º Andar" value={formAndar} onChangeText={setFormAndar} />
+              <TextInput style={styles.input} placeholder="Ex: 3º Andar" placeholderTextColor="#94A3B8" value={formAndar} onChangeText={setFormAndar} />
             </View>
 
             <View style={styles.formButtons}>
@@ -880,7 +880,7 @@ export default function AmbientesScreen() {
             <Text style={styles.label}>Título *</Text>
             <View style={styles.inputBox}>
               <TextInput 
-                style={styles.input} placeholder="Ex: Climatização para reunião" 
+                style={styles.input} placeholder="Ex: Climatização para reunião" placeholderTextColor="#94A3B8"
                 value={formAgendamento.titulo} 
                 onChangeText={(t) => setFormAgendamento(prev => ({...prev, titulo: t}))} 
               />
@@ -889,7 +889,7 @@ export default function AmbientesScreen() {
             <Text style={styles.label}>Descrição</Text>
             <View style={[styles.inputBox, { height: 60 }]}>
               <TextInput 
-                style={[styles.input, { height: 50, textAlignVertical: 'top' }]} placeholder="Ex: Ligar ar-condicionado antes da reunião" 
+                style={[styles.input, { height: 50, textAlignVertical: 'top' }]} placeholder="Ex: Ligar ar-condicionado antes da reunião" placeholderTextColor="#94A3B8"
                 value={formAgendamento.descricao} 
                 onChangeText={(t) => setFormAgendamento(prev => ({...prev, descricao: t}))}
                 multiline
@@ -967,7 +967,7 @@ export default function AmbientesScreen() {
                 <Text style={styles.label}>Data *</Text>
                 <View style={styles.inputBox}>
                   <TextInput 
-                    style={styles.input} placeholder="DD/MM/AAAA" 
+                    style={styles.input} placeholder="DD/MM/AAAA" placeholderTextColor="#94A3B8"
                     value={formAgendamento.data} 
                     onChangeText={(t) => setFormAgendamento(prev => ({...prev, data: t}))} 
                   />
@@ -978,7 +978,7 @@ export default function AmbientesScreen() {
                 <Text style={styles.label}>Horário *</Text>
                 <View style={styles.inputBox}>
                   <TextInput 
-                    style={styles.input} placeholder="HH:MM" 
+                    style={styles.input} placeholder="HH:MM" placeholderTextColor="#94A3B8"
                     value={formAgendamento.horario} 
                     onChangeText={(t) => setFormAgendamento(prev => ({...prev, horario: t}))} 
                   />
@@ -1204,7 +1204,7 @@ const styles = StyleSheet.create({
   dropdownContainer: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, marginTop: -15, marginBottom: 18, elevation: 2 },
   dropdownItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   dropdownItemActive: { backgroundColor: '#EFF6FF' },
-  dropdownText: { fontSize: 15, color: '#1E293B' },
+  dropdownText: { fontSize: 15, color: '#000' },
   // Modal perfil lateral direita
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row' },
   modalBackdrop: { flex: 0.15 },
