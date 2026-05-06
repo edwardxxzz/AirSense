@@ -606,16 +606,10 @@ export default function AmbientesScreen() {
         {/* ==================== TAB: AMBIENTES ==================== */}
         {mainTab === 'ambientes' && (
           <>
-            <View style={styles.actionButtonsRow}>
-              <TouchableOpacity style={styles.btnActionPrimary} onPress={() => { resetForm(); setIsAdding(true); }}>
-                <Plus color="#FFF" size={20} />
-                <Text style={styles.btnActionPrimaryText}>Novo Ambiente</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.btnActionSecondary} onPress={() => setIsScheduling(true)}>
-                <CalendarDays color="#1E293B" size={20} />
-                <Text style={styles.btnActionSecondaryText}>Agendar Sala</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.btnActionPrimary} onPress={() => { resetForm(); setIsAdding(true); }}>
+              <Plus color="#FFF" size={20} />
+              <Text style={styles.btnActionPrimaryText}>Novo Ambiente</Text>
+            </TouchableOpacity>
 
             <Pressable style={[styles.searchContainer, isFocused && styles.searchContainerFocused]} onPress={() => inputRef.current?.focus()}>
               <Search color={isFocused ? "#000" : "#64748B"} size={20} />
@@ -666,9 +660,9 @@ export default function AmbientesScreen() {
         {/* ==================== TAB: AGENDAMENTOS ==================== */}
         {mainTab === 'agendamentos' && (
           <>
-            <TouchableOpacity style={styles.btnNewSchedule} onPress={() => setIsScheduling(true)}>
-              <Plus color="#FFF" size={20} />
-              <Text style={styles.btnNewScheduleText}>Novo Agendamento</Text>
+            <TouchableOpacity style={styles.btnScheduleWhite} onPress={() => setIsScheduling(true)}>
+              <CalendarDays color="#1E293B" size={20} />
+              <Text style={styles.btnScheduleWhiteText}>Agendar Sala</Text>
             </TouchableOpacity>
 
             {agendamentosGeral.length > 0 ? (
@@ -1139,7 +1133,7 @@ const styles = StyleSheet.create({
   mainTabTextActive: { color: '#2563EB' },
   // Action buttons
   actionButtonsRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  btnActionPrimary: { flex: 1, backgroundColor: '#2563EB', height: 48, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  btnActionPrimary: { backgroundColor: '#2563EB', height: 48, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20 },
   btnActionPrimaryText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
   btnActionSecondary: { flex: 1, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#CBD5E1', height: 48, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   btnActionSecondaryText: { color: '#1E293B', fontWeight: 'bold', fontSize: 15 },
@@ -1160,8 +1154,8 @@ const styles = StyleSheet.create({
   menuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 },
   menuText: { fontSize: 14, fontWeight: '500', color: '#475569' },
   // Schedule styles
-  btnNewSchedule: { backgroundColor: '#2563EB', height: 48, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 },
-  btnNewScheduleText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
+  btnScheduleWhite: { backgroundColor: '#FFF', height: 48, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16, borderWidth: 1, borderColor: '#CBD5E1' },
+  btnScheduleWhiteText: { color: '#1E293B', fontWeight: 'bold', fontSize: 15 },
   scheduleCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 18, marginBottom: 14, borderWidth: 1, borderColor: '#F1F5F9', elevation: 2 },
   scheduleCardActive: { borderColor: '#93C5FD', borderWidth: 2, backgroundColor: '#F0F9FF' },
   scheduleHeader: { flexDirection: 'row', alignItems: 'flex-start' },
