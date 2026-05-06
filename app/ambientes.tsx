@@ -156,7 +156,7 @@ export default function AmbientesScreen() {
       { text: "Excluir", style: "destructive", onPress: async () => {
         if (!empresaId || !ag.ambienteId || !ag.id) {
           console.error("Dados insuficientes para excluir agendamento:", { empresaId, ambienteId: ag.ambienteId, agId: ag.id });
-          Alert.alert("Erro", "Dados insuficientes para excluir agendamento.");
+          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresaId || 'vazio'}, Amb: ${ag.ambienteId || 'vazio'}, AgendId: ${ag.id || 'vazio'}`);
           return;
         }
         try {
@@ -164,9 +164,16 @@ export default function AmbientesScreen() {
           console.log("Excluindo agendamento:", `empresas/${empresaId}/ambientes/${ag.ambienteId}/agendamentos/${ag.id}`);
           await deleteDoc(agDocRef);
           console.log("Agendamento excluído com sucesso no Firestore");
-        } catch (e) {
+          Alert.alert("Sucesso", "Agendamento excluído!");
+        } catch (e: any) {
           console.error("Erro ao excluir agendamento:", e);
-          Alert.alert("Erro", "Falha ao excluir agendamento do Firestore.");
+          const errorCode = e?.code || '';
+          const errorMsg = e?.message || String(e);
+          if (errorCode === 'permission-denied') {
+            Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.");
+          } else {
+            Alert.alert("Erro ao Excluir", `Código: ${errorCode}\nMensagem: ${errorMsg}`);
+          }
         }
       }}
     ]);
@@ -471,7 +478,7 @@ export default function AmbientesScreen() {
           onPress: async () => {
             if(!empresaId || !id) {
               console.error("Dados insuficientes para excluir ambiente:", { empresaId, id });
-              Alert.alert("Erro", "Dados insuficientes para excluir ambiente.");
+              Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresaId || 'vazio'}, ID: ${id || 'vazio'}`);
               return;
             }
             try {
@@ -490,10 +497,16 @@ export default function AmbientesScreen() {
               }
               await deleteDoc(ambRef);
               console.log("Ambiente excluído com sucesso no Firestore");
-              Alert.alert("Sucesso", "Ambiente excluído.");
-            } catch (e) {
+              Alert.alert("Sucesso", "Ambiente excluído!");
+            } catch (e: any) {
               console.error("Erro ao excluir ambiente:", e);
-              Alert.alert("Erro", "Falha ao excluir ambiente do Firestore.");
+              const errorCode = e?.code || '';
+              const errorMsg = e?.message || String(e);
+              if (errorCode === 'permission-denied') {
+                Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.");
+              } else {
+                Alert.alert("Erro ao Excluir", `Código: ${errorCode}\nMensagem: ${errorMsg}`);
+              }
             }
           }
         }

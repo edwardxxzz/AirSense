@@ -245,26 +245,12 @@ export default function AmbienteDetalhes() {
       { text: "Excluir", style: "destructive", onPress: async () => {
         if (!empresa || !id || !p.docId || !p.nomeId) {
           console.error("Dados insuficientes para excluir periférico:", { empresa, id, docId: p.docId, nomeId: p.nomeId });
-          Alert.alert("Erro", "Dados insuficientes para excluir.");
+          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresa || 'vazio'}, Amb: ${id || 'vazio'}, DocId: ${p.docId || 'vazio'}, NomeId: ${p.nomeId || 'vazio'}`);
           return;
         }
         try {
           const perDocRef = doc(db, "empresas", String(empresa), "ambientes", String(id), "perifericos", p.docId);
           console.log("Excluindo periférico:", `empresas/${empresa}/ambientes/${id}/perifericos/${p.docId}`, "campo:", p.nomeId);
-          
-          // Verifica se o documento existe
-          const docSnap = await getDoc(perDocRef);
-          if (!docSnap.exists()) {
-            Alert.alert("Erro", "Documento de periférico não encontrado no Firestore.");
-            return;
-          }
-          
-          // Verifica se o campo realmente existe
-          const data = docSnap.data();
-          if (!(p.nomeId in data)) {
-            Alert.alert("Erro", "Periférico não encontrado no documento.");
-            return;
-          }
           
           // Usa updateDoc com deleteField() para remover o campo de forma atômica
           await updateDoc(perDocRef, {
@@ -272,9 +258,16 @@ export default function AmbienteDetalhes() {
           });
           
           console.log("Periférico excluído com sucesso no Firestore");
-        } catch (e) { 
-          console.error("Erro ao excluir periférico:", e); 
-          Alert.alert("Erro", "Falha ao excluir periférico do Firestore."); 
+          Alert.alert("Sucesso", "Periférico excluído!");
+        } catch (e: any) { 
+          console.error("Erro ao excluir periférico:", e);
+          const errorCode = e?.code || '';
+          const errorMsg = e?.message || String(e);
+          if (errorCode === 'permission-denied') {
+            Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.");
+          } else {
+            Alert.alert("Erro ao Excluir", `Código: ${errorCode}\nMensagem: ${errorMsg}`);
+          }
         }
       }}
     ]);
@@ -372,7 +365,7 @@ export default function AmbienteDetalhes() {
       { text: "Excluir", style: "destructive", onPress: async () => {
         if (!empresa || !id || !ag.id) {
           console.error("Dados insuficientes para excluir agendamento:", { empresa, id, agId: ag.id });
-          Alert.alert("Erro", "Dados insuficientes para excluir agendamento.");
+          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresa || 'vazio'}, Amb: ${id || 'vazio'}, AgendId: ${ag.id || 'vazio'}`);
           return;
         }
         try {
@@ -380,9 +373,16 @@ export default function AmbienteDetalhes() {
           console.log("Excluindo agendamento:", `empresas/${empresa}/ambientes/${id}/agendamentos/${ag.id}`);
           await deleteDoc(agDocRef);
           console.log("Agendamento excluído com sucesso no Firestore");
-        } catch (e) {
+          Alert.alert("Sucesso", "Agendamento excluído!");
+        } catch (e: any) {
           console.error("Erro ao excluir agendamento:", e);
-          Alert.alert("Erro", "Falha ao excluir agendamento do Firestore.");
+          const errorCode = e?.code || '';
+          const errorMsg = e?.message || String(e);
+          if (errorCode === 'permission-denied') {
+            Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.");
+          } else {
+            Alert.alert("Erro ao Excluir", `Código: ${errorCode}\nMensagem: ${errorMsg}`);
+          }
         }
       }}
     ]);
@@ -462,7 +462,7 @@ export default function AmbienteDetalhes() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.titleSection}>
-          <TouchableOpacity onPress={() => router.back()}><ArrowLeft color="#000" size={32} /></TouchableOpacity>
+          <TouchableOpacity onPress={() => router.back()} style={{ padding: 10, marginLeft: -10 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><ArrowLeft color="#000" size={28} /></TouchableOpacity>
           <View>
             <Text style={styles.envName}>{nome || 'Nome Ambiente'}</Text>
             <Text style={styles.envSub}>{caracteristicas.tipo} • {caracteristicas.andar}</Text>

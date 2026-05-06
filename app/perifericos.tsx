@@ -238,26 +238,12 @@ export default function PerifericosScreen() {
       { text: "Excluir", style: "destructive", onPress: async () => {
         if (!empresaId || !item.ambienteId || !item.tipo || !item.id) {
           console.error("Dados insuficientes para excluir periférico:", { empresaId, ambienteId: item.ambienteId, tipo: item.tipo, id: item.id });
-          Alert.alert("Erro", "Dados insuficientes para excluir.");
+          Alert.alert("Erro", `Dados insuficientes. Empresa: ${empresaId || 'vazio'}, Amb: ${item.ambienteId || 'vazio'}, Tipo: ${item.tipo || 'vazio'}, ID: ${item.id || 'vazio'}`);
           return;
         }
         try {
           const perDocRef = doc(db, "empresas", empresaId, "ambientes", item.ambienteId, "perifericos", item.tipo);
           console.log("Excluindo periférico:", `empresas/${empresaId}/ambientes/${item.ambienteId}/perifericos/${item.tipo}`, "campo:", item.id);
-          
-          // Verifica se o documento existe antes de tentar remover o campo
-          const docSnap = await getDoc(perDocRef);
-          if (!docSnap.exists()) {
-            Alert.alert("Erro", "Documento de periférico não encontrado no Firestore.");
-            return;
-          }
-          
-          // Verifica se o campo realmente existe no documento
-          const data = docSnap.data();
-          if (!(item.id in data)) {
-            Alert.alert("Erro", "Periférico não encontrado no documento.");
-            return;
-          }
           
           // Usa updateDoc com deleteField() para remover o campo de forma atômica
           await updateDoc(perDocRef, {
@@ -266,9 +252,16 @@ export default function PerifericosScreen() {
           
           console.log("Periférico excluído com sucesso no Firestore");
           carregarDados(empresaId);
-        } catch (e) { 
-          console.error("Erro ao excluir periférico:", e); 
-          Alert.alert("Erro", "Falha ao excluir periférico do Firestore."); 
+          Alert.alert("Sucesso", "Periférico excluído!");
+        } catch (e: any) { 
+          console.error("Erro ao excluir periférico:", e);
+          const errorCode = e?.code || '';
+          const errorMsg = e?.message || String(e);
+          if (errorCode === 'permission-denied') {
+            Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.\n\nCaminho: empresas/" + empresaId + "/ambientes/" + item.ambienteId + "/perifericos/" + item.tipo);
+          } else {
+            Alert.alert("Erro ao Excluir", `Código: ${errorCode}\nMensagem: ${errorMsg}`);
+          }
         }
       }}
     ]);

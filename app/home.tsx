@@ -286,7 +286,7 @@ export default function DashboardScreen() {
         text: "Excluir", style: "destructive", onPress: async () => {
           if (!userEmpresaId || !id) {
             console.error("Dados insuficientes para excluir ambiente:", { userEmpresaId, id });
-            Alert.alert("Erro", "Dados insuficientes para excluir ambiente.");
+            Alert.alert("Erro", `Dados insuficientes. Empresa: ${userEmpresaId || 'vazio'}, ID: ${id || 'vazio'}`);
             return;
           }
           try {
@@ -305,8 +305,18 @@ export default function DashboardScreen() {
             }
             await deleteDoc(ambRef);
             console.log("Ambiente excluído com sucesso no Firestore");
+            Alert.alert("Sucesso", "Ambiente excluído!");
           }
-          catch (e) { console.error("Erro ao excluir ambiente:", e); Alert.alert("Erro", "Falha ao excluir ambiente do Firestore."); }
+          catch (e: any) {
+            console.error("Erro ao excluir ambiente:", e);
+            const errorCode = e?.code || '';
+            const errorMsg = e?.message || String(e);
+            if (errorCode === 'permission-denied') {
+              Alert.alert("Permissão Negada", "O Firestore está bloqueando a exclusão. Verifique as regras de segurança do Firebase.");
+            } else {
+              Alert.alert("Erro ao Excluir", `Código: ${errorCode}\nMensagem: ${errorMsg}`);
+            }
+          }
         }
       }
     ]);

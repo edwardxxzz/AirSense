@@ -9,7 +9,7 @@ const firebaseConfig = {
   projectId: "arsense-9f3a4",
   storageBucket: "arsense-9f3a4.firebasestorage.app",
   messagingSenderId: "211530848431",
-  appAddId: "1:211530848431:web:48ac70f2b6abb86a199c5a",
+  appId: "1:211530848431:web:48ac70f2b6abb86a199c5a",
   measurementId: "G-JTLZP99FW9"
 };
 
